@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Files - Epistery</title>
+    <link rel="stylesheet" href="/style/static.css">
+    <style>
+        .upload-area {
+            border: 2px dashed var(--page-border);
+            border-radius: 8px;
+            padding: var(--spacer3);
+            text-align: center;
+            margin: var(--spacer2) 0;
+            background: var(--bg-color-quiet-d);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .upload-area:hover {
+            border-color: var(--action-color);
+            background: var(--bg-color);
+        }
+        .upload-area.drag-over {
+            border-color: var(--primary);
+            background: var(--bg-color);
+        }
+        .file-list {
+            display: grid;
+            gap: var(--spacer);
+            margin-top: var(--spacer2);
+        }
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: var(--spacer);
+            padding: var(--spacer);
+            background: var(--bg-color-quiet-d);
+            border-radius: 8px;
+            border: 1px solid var(--page-border);
+        }
+        .file-icon {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--action-color);
+            color: var(--bg-color);
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .file-info {
+            flex: 1;
+        }
+        .file-name {
+            font-weight: 600;
+            color: var(--text-color);
+        }
+        .file-meta {
+            font-size: 0.85rem;
+            color: var(--text-color-quiet);
+        }
+        .file-actions {
+            display: flex;
+            gap: var(--spacerhalf);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <nav>
+            <a href="/?home" class="logo">
+                <img alt="logo" src="/image/epistery-logo-32.svg" class="logo-window">
+            </a>
+            <div class="nav-menu" id="nav-menu"></div>
+        </nav>
+    </header>
+
+    <main class="console-layout no-sidebar">
+        <div class="console-main">
+            <div class="console-header">
+                <h1>📁 Files</h1>
+                <p class="console-tagline">IPFS file management with origin tracking</p>
+            </div>
+
+            <div class="console-panel">
+                <h2>Upload Files</h2>
+                <div class="upload-area" id="upload-area">
+                    <p>Drag & drop files here or click to select</p>
+                    <input type="file" id="file-input" multiple style="display: none;">
+                </div>
+                <div id="upload-progress" style="display: none;">
+                    <div class="spinner"></div>
+                    <span>Uploading...</span>
+                </div>
+            </div>
+
+            <div class="console-panel">
+                <h2>Your Files</h2>
+                <div id="file-list" class="file-list">
+                    <p style="text-align: center; color: var(--text-color-quiet);">No files uploaded yet</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module">
+        // Load navigation
+        fetch('/api/nav-menu')
+            .then(r => r.text())
+            .then(html => document.getElementById('nav-menu').innerHTML = html);
+
+        const uploadArea = document.getElementById('upload-area');
+        const fileInput = document.getElementById('file-input');
+        const uploadProgress = document.getElementById('upload-progress');
+        const fileList = document.getElementById('file-list');
+
+        // Click to upload
+        uploadArea.addEventListener('click', () => fileInput.click());
+
+        // File selection
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                uploadFiles(Array.from(e.target.files));
+            }
+        });
+
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('drag-over');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('drag-over');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('drag-over');
+            const files = Array.from(e.dataTransfer.files);
+            if (files.length > 0) {
+                uploadFiles(files);
+            }
+        });
+
+        // Upload files
+        async function uploadFiles(files) {
+            uploadProgress.style.display = 'block';
+
+            for (const file of files) {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const response = await fetch('/agent/epistery/files/api/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.error || 'Upload failed');
+                    }
+
+                    const result = await response.json();
+                    console.log('Uploaded:', result);
+                } catch (error) {
+                    console.error('Upload error:', error);
+                    alert(`Failed to upload ${file.name}: ${error.message}`);
+                }
+            }
+
+            uploadProgress.style.display = 'none';
+            fileInput.value = '';
+            loadFiles();
+        }
+
+        let currentFolder = '';
+
+        // Load file list
+        async function loadFiles(folder = '') {
+            currentFolder = folder;
+
+            try {
+                const response = await fetch(`/agent/epistery/files/api/list?folder=${encodeURIComponent(folder)}`);
+                const data = await response.json();
+
+                if (data.files.length === 0 && data.folders.length === 0) {
+                    fileList.innerHTML = '<p style="text-align: center; color: var(--text-color-quiet);">No files or folders</p>';
+                    return;
+                }
+
+                let html = '';
+
+                // Show folders first
+                if (data.folders.length > 0) {
+                    html += data.folders.map(folder => `
+                        <div class="file-item" style="cursor: pointer;" onclick="loadFiles('${folder.path}')">
+                            <div class="file-icon" style="background: var(--primary);">📁</div>
+                            <div class="file-info">
+                                <div class="file-name">${folder.name}</div>
+                                <div class="file-meta">Folder</div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+                // Show files
+                if (data.files.length > 0) {
+                    html += data.files.map(file => `
+                        <div class="file-item">
+                            <div class="file-icon">${file.name.substring(0, 2).toUpperCase()}</div>
+                            <div class="file-info">
+                                <div class="file-name">${file.name}</div>
+                                <div class="file-meta">${formatSize(file.size)} • ${file.mimetype}</div>
+                                <div class="file-meta" style="font-size: 0.75rem;">IPFS: ${file.ipfsHash.substring(0, 12)}...</div>
+                            </div>
+                            <div class="file-actions">
+                                <button class="console-btn small" onclick="downloadFile('${file.id}')">Download</button>
+                                <button class="console-btn small danger" onclick="deleteFile('${file.id}')">Delete</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+                fileList.innerHTML = html;
+            } catch (error) {
+                console.error('Failed to load files:', error);
+            }
+        }
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        window.downloadFile = function(id) {
+            window.location.href = `/agent/epistery/files/api/file/${id}/download`;
+        };
+
+        window.deleteFile = async function(id) {
+            if (!confirm('Delete this file?')) return;
+
+            try {
+                const response = await fetch(`/agent/epistery/files/api/file/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Delete failed');
+                }
+
+                loadFiles(currentFolder);
+            } catch (error) {
+                console.error('Delete error:', error);
+                alert('Failed to delete file: ' + error.message);
+            }
+        };
+
+        // Load files on page load
+        loadFiles();
+    </script>
+</body>
+</html>

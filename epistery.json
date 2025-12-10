@@ -1,0 +1,19 @@
+{
+  "name": "@epistery/files",
+  "title": "Files",
+  "version": "0.1.0",
+  "description": "IPFS file management with origin tracking via data wallets",
+  "author": "Epistery",
+  "main": "index.mjs",
+  "icon": "/agent/epistery/files/icon.svg",
+  "widget": "/agent/epistery/files/widget",
+  "permissions": [
+    "whitelist:read",
+    "ipfs:write"
+  ],
+  "config": {
+    "uploadList": "files::upload",
+    "manageList": "files::manage",
+    "ipfsGateway": "https://rootz.digital/api/v0"
+  }
+}

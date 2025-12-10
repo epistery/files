@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Files Admin - Epistery</title>
+    <link rel="stylesheet" href="/style/static.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <a href="/?home" class="logo">
+                <img alt="logo" src="/image/epistery-logo-32.svg" class="logo-window">
+            </a>
+            <div class="nav-menu" id="nav-menu"></div>
+        </nav>
+    </header>
+
+    <main class="console-layout no-sidebar">
+        <div class="console-main">
+            <div class="console-header">
+                <h1>Files Admin</h1>
+                <p class="console-tagline">Configure file storage settings</p>
+            </div>
+
+            <div class="console-panel">
+                <h2>Configuration</h2>
+                <p>File storage configuration coming soon...</p>
+            </div>
+        </div>
+    </main>
+
+    <script type="module">
+        // Load navigation
+        fetch('/api/nav-menu')
+            .then(r => r.text())
+            .then(html => document.getElementById('nav-menu').innerHTML = html);
+    </script>
+</body>
+</html>
