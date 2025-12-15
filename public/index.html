@@ -6,63 +6,111 @@
     <title>Files - Epistery</title>
     <link rel="stylesheet" href="/style/static.css">
     <style>
-        .upload-area {
-            border: 2px dashed var(--page-border);
-            border-radius: 8px;
-            padding: var(--spacer3);
-            text-align: center;
-            margin: var(--spacer2) 0;
-            background: var(--bg-color-quiet-d);
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-        .upload-area:hover {
-            border-color: var(--action-color);
-            background: var(--bg-color);
-        }
-        .upload-area.drag-over {
-            border-color: var(--primary);
-            background: var(--bg-color);
-        }
-        .file-list {
-            display: grid;
-            gap: var(--spacer);
-            margin-top: var(--spacer2);
-        }
-        .file-item {
-            display: flex;
-            align-items: center;
-            gap: var(--spacer);
+        .breadcrumb {
             padding: var(--spacer);
-            background: var(--bg-color-quiet-d);
-            border-radius: 8px;
-            border: 1px solid var(--page-border);
+            color: var(--text-color-quiet);
+            font-size: 0.9rem;
+            border-bottom: 1px solid var(--page-border);
         }
-        .file-icon {
-            width: 40px;
-            height: 40px;
+        .breadcrumb a {
+            color: var(--action-color);
+            text-decoration: none;
+        }
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+        .breadcrumb-separator {
+            margin: 0 0.5em;
+            color: var(--text-color-quiet);
+        }
+
+        .file-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: var(--spacer2);
+            padding: var(--spacer2);
+            min-height: 400px;
+        }
+
+        .file-tile {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: var(--spacer);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            border: 2px solid transparent;
+        }
+        .file-tile:hover {
+            background: var(--bg-color-quiet-d);
+        }
+        .file-tile.selected {
+            background: var(--bg-color-quiet-d);
+            border-color: var(--action-color);
+        }
+
+        .file-tile-icon {
+            width: 64px;
+            height: 64px;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: var(--action-color);
-            color: var(--bg-color);
-            border-radius: 4px;
-            font-weight: bold;
+            font-size: 2rem;
+            margin-bottom: var(--spacerhalf);
         }
-        .file-info {
-            flex: 1;
-        }
-        .file-name {
-            font-weight: 600;
-            color: var(--text-color);
-        }
-        .file-meta {
+
+        .file-tile-name {
+            text-align: center;
             font-size: 0.85rem;
-            color: var(--text-color-quiet);
+            color: var(--text-color);
+            word-break: break-word;
+            width: 100%;
         }
-        .file-actions {
+
+        .folder-tile-icon {
+            color: var(--action-color);
+        }
+
+        .sidebar-section {
+            margin-bottom: var(--spacer2);
+        }
+
+        .sidebar-section h3 {
+            font-size: 0.9rem;
+            color: var(--text-color-quiet);
+            margin-bottom: var(--spacer);
+        }
+
+        .sidebar-buttons {
             display: flex;
+            flex-direction: column;
             gap: var(--spacerhalf);
+        }
+
+        .detail-item {
+            margin-bottom: var(--spacerhalf);
+            font-size: 0.85rem;
+        }
+
+        .detail-label {
+            color: var(--text-color-quiet);
+            font-weight: 600;
+        }
+
+        .detail-value {
+            color: var(--text-color);
+            word-break: break-all;
+        }
+
+        .drop-active {
+            background: var(--bg-color-quiet-d);
+            outline: 2px dashed var(--action-color);
+            outline-offset: -10px;
+        }
+
+        input[type="file"] {
+            display: none;
         }
     </style>
 </head>
@@ -76,32 +124,33 @@
         </nav>
     </header>
 
-    <main class="console-layout no-sidebar">
-        <div class="console-main">
-            <div class="console-header">
-                <h1>📁 Files</h1>
-                <p class="console-tagline">IPFS file management with origin tracking</p>
+    <main class="console-layout">
+        <div class="console-main" id="drop-zone">
+            <div class="breadcrumb" id="breadcrumb">
+                <a href="#" onclick="navigateToFolder(''); return false;" id="domain-crumb">localhost</a>
             </div>
 
-            <div class="console-panel">
-                <h2>Upload Files</h2>
-                <div class="upload-area" id="upload-area">
-                    <p>Drag & drop files here or click to select</p>
-                    <input type="file" id="file-input" multiple style="display: none;">
-                </div>
-                <div id="upload-progress" style="display: none;">
-                    <div class="spinner"></div>
-                    <span>Uploading...</span>
-                </div>
-            </div>
-
-            <div class="console-panel">
-                <h2>Your Files</h2>
-                <div id="file-list" class="file-list">
-                    <p style="text-align: center; color: var(--text-color-quiet);">No files uploaded yet</p>
-                </div>
+            <div class="file-grid" id="file-grid">
+                <p style="text-align: center; color: var(--text-color-quiet); grid-column: 1 / -1;">No files or folders</p>
             </div>
         </div>
+
+        <aside class="console-sidebar">
+            <div class="sidebar-section">
+                <h3>Actions</h3>
+                <div class="sidebar-buttons">
+                    <button class="console-btn" onclick="createFile()">📄 Create File</button>
+                    <button class="console-btn" onclick="createFolder()">📁 Create Folder</button>
+                    <button class="console-btn" onclick="uploadFiles()">⬆️ Upload Files</button>
+                </div>
+                <input type="file" id="file-input" multiple>
+            </div>
+
+            <div class="sidebar-section" id="details-section" style="display: none;">
+                <h3>Details</h3>
+                <div id="file-details"></div>
+            </div>
+        </aside>
     </main>
 
     <script type="module">
@@ -110,47 +159,79 @@
             .then(r => r.text())
             .then(html => document.getElementById('nav-menu').innerHTML = html);
 
-        const uploadArea = document.getElementById('upload-area');
         const fileInput = document.getElementById('file-input');
-        const uploadProgress = document.getElementById('upload-progress');
-        const fileList = document.getElementById('file-list');
+        const fileGrid = document.getElementById('file-grid');
+        const dropZone = document.getElementById('drop-zone');
+        const detailsSection = document.getElementById('details-section');
+        const fileDetails = document.getElementById('file-details');
+        const domainCrumb = document.getElementById('domain-crumb');
 
-        // Click to upload
-        uploadArea.addEventListener('click', () => fileInput.click());
+        let currentFolder = '';
+        let selectedItem = null;
 
-        // File selection
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                uploadFiles(Array.from(e.target.files));
+        // Set domain name
+        domainCrumb.textContent = window.location.hostname || 'localhost';
+
+        // Drag and drop on entire body panel
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drop-active');
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            if (e.target === dropZone) {
+                dropZone.classList.remove('drop-active');
             }
         });
 
-        // Drag and drop
-        uploadArea.addEventListener('dragover', (e) => {
+        dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
-            uploadArea.classList.add('drag-over');
-        });
-
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('drag-over');
-        });
-
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('drag-over');
+            dropZone.classList.remove('drop-active');
             const files = Array.from(e.dataTransfer.files);
             if (files.length > 0) {
-                uploadFiles(files);
+                handleFileUpload(files);
             }
         });
 
-        // Upload files
-        async function uploadFiles(files) {
-            uploadProgress.style.display = 'block';
+        // File input change
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileUpload(Array.from(e.target.files));
+            }
+        });
 
+        // Upload files function (for button)
+        window.uploadFiles = function() {
+            fileInput.click();
+        };
+
+        // Create file function
+        window.createFile = function() {
+            const name = prompt('Enter file name:');
+            if (!name) return;
+
+            const content = prompt('Enter file content (optional):') || '';
+            const blob = new Blob([content], { type: 'text/plain' });
+            const file = new File([blob], name, { type: 'text/plain' });
+            handleFileUpload([file]);
+        };
+
+        // Create folder function
+        window.createFolder = function() {
+            alert('Folder creation coming soon - folders are created automatically when uploading files with paths');
+        };
+
+        // Navigate to folder
+        window.navigateToFolder = function(folder) {
+            loadFiles(folder);
+        };
+
+        // Upload files
+        async function handleFileUpload(files) {
             for (const file of files) {
                 const formData = new FormData();
                 formData.append('file', file);
+                formData.append('folder', currentFolder);
 
                 try {
                     const response = await fetch('/agent/epistery/files/api/upload', {
@@ -162,71 +243,164 @@
                         const error = await response.json();
                         throw new Error(error.error || 'Upload failed');
                     }
-
-                    const result = await response.json();
-                    console.log('Uploaded:', result);
                 } catch (error) {
                     console.error('Upload error:', error);
                     alert(`Failed to upload ${file.name}: ${error.message}`);
                 }
             }
 
-            uploadProgress.style.display = 'none';
             fileInput.value = '';
-            loadFiles();
+            loadFiles(currentFolder);
         }
-
-        let currentFolder = '';
 
         // Load file list
         async function loadFiles(folder = '') {
             currentFolder = folder;
+            selectedItem = null;
+            detailsSection.style.display = 'none';
+
+            // Update breadcrumb
+            updateBreadcrumb(folder);
 
             try {
                 const response = await fetch(`/agent/epistery/files/api/list?folder=${encodeURIComponent(folder)}`);
                 const data = await response.json();
 
                 if (data.files.length === 0 && data.folders.length === 0) {
-                    fileList.innerHTML = '<p style="text-align: center; color: var(--text-color-quiet);">No files or folders</p>';
+                    fileGrid.innerHTML = '<p style="text-align: center; color: var(--text-color-quiet); grid-column: 1 / -1;">No files or folders</p>';
                     return;
                 }
 
                 let html = '';
 
                 // Show folders first
-                if (data.folders.length > 0) {
-                    html += data.folders.map(folder => `
-                        <div class="file-item" style="cursor: pointer;" onclick="loadFiles('${folder.path}')">
-                            <div class="file-icon" style="background: var(--primary);">📁</div>
-                            <div class="file-info">
-                                <div class="file-name">${folder.name}</div>
-                                <div class="file-meta">Folder</div>
-                            </div>
+                for (const folder of data.folders) {
+                    html += `
+                        <div class="file-tile" onclick="selectFolder('${escapeHtml(folder.name)}', '${escapeHtml(folder.path)}')">
+                            <div class="file-tile-icon folder-tile-icon">📁</div>
+                            <div class="file-tile-name">${escapeHtml(folder.name)}</div>
                         </div>
-                    `).join('');
+                    `;
                 }
 
                 // Show files
-                if (data.files.length > 0) {
-                    html += data.files.map(file => `
-                        <div class="file-item">
-                            <div class="file-icon">${file.name.substring(0, 2).toUpperCase()}</div>
-                            <div class="file-info">
-                                <div class="file-name">${file.name}</div>
-                                <div class="file-meta">${formatSize(file.size)} • ${file.mimetype}</div>
-                                <div class="file-meta" style="font-size: 0.75rem;">IPFS: ${file.ipfsHash.substring(0, 12)}...</div>
-                            </div>
-                            <div class="file-actions">
-                                <button class="console-btn small" onclick="downloadFile('${file.id}')">Download</button>
-                                <button class="console-btn small danger" onclick="deleteFile('${file.id}')">Delete</button>
-                            </div>
+                for (const file of data.files) {
+                    const ext = file.name.split('.').pop()?.toUpperCase().substring(0, 3) || 'FILE';
+                    html += `
+                        <div class="file-tile" onclick='selectFile(${JSON.stringify(file)})'>
+                            <div class="file-tile-icon">📄</div>
+                            <div class="file-tile-name">${escapeHtml(file.name)}</div>
                         </div>
-                    `).join('');
+                    `;
                 }
 
-                fileList.innerHTML = html;
+                fileGrid.innerHTML = html;
             } catch (error) {
                 console.error('Failed to load files:', error);
+            }
+        }
+
+        // Update breadcrumb
+        function updateBreadcrumb(folder) {
+            const breadcrumb = document.getElementById('breadcrumb');
+            const domain = window.location.hostname || 'localhost';
+
+            let html = `<a href="#" onclick="navigateToFolder(''); return false;">${domain}</a>`;
+
+            if (folder) {
+                const parts = folder.split('/').filter(p => p);
+                let path = '';
+                for (const part of parts) {
+                    path += (path ? '/' : '') + part;
+                    html += `<span class="breadcrumb-separator">›</span><a href="#" onclick="navigateToFolder('${escapeHtml(path)}'); return false;">${escapeHtml(part)}</a>`;
+                }
+            }
+
+            breadcrumb.innerHTML = html;
+        }
+
+        // Select folder
+        window.selectFolder = function(name, path) {
+            if (event && event.detail === 2) {
+                // Double click - navigate
+                loadFiles(path);
+            } else {
+                // Single click - select and show details
+                document.querySelectorAll('.file-tile').forEach(t => t.classList.remove('selected'));
+                event.currentTarget.classList.add('selected');
+
+                selectedItem = { type: 'folder', name, path };
+                showDetails();
+            }
+        };
+
+        // Select file
+        window.selectFile = function(file) {
+            if (event && event.detail === 2) {
+                // Double click - download
+                downloadFile(file.id);
+            } else {
+                // Single click - select and show details
+                document.querySelectorAll('.file-tile').forEach(t => t.classList.remove('selected'));
+                event.currentTarget.classList.add('selected');
+
+                selectedItem = { type: 'file', ...file };
+                showDetails();
+            }
+        };
+
+        // Show details in sidebar
+        function showDetails() {
+            if (!selectedItem) return;
+
+            detailsSection.style.display = 'block';
+
+            if (selectedItem.type === 'folder') {
+                fileDetails.innerHTML = `
+                    <div class="detail-item">
+                        <div class="detail-label">Type</div>
+                        <div class="detail-value">Folder</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Name</div>
+                        <div class="detail-value">${escapeHtml(selectedItem.name)}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Path</div>
+                        <div class="detail-value">${escapeHtml(selectedItem.path)}</div>
+                    </div>
+                `;
+            } else {
+                fileDetails.innerHTML = `
+                    <div class="detail-item">
+                        <div class="detail-label">Type</div>
+                        <div class="detail-value">File</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Name</div>
+                        <div class="detail-value">${escapeHtml(selectedItem.name)}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Size</div>
+                        <div class="detail-value">${formatSize(selectedItem.size)}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Type</div>
+                        <div class="detail-value">${escapeHtml(selectedItem.mimetype)}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">IPFS Hash</div>
+                        <div class="detail-value" style="font-size: 0.75rem;">${escapeHtml(selectedItem.ipfsHash)}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Uploaded</div>
+                        <div class="detail-value">${new Date(selectedItem.uploadedAt).toLocaleString()}</div>
+                    </div>
+                    <div style="margin-top: var(--spacer); display: flex; flex-direction: column; gap: var(--spacerhalf);">
+                        <button class="console-btn small" onclick="downloadFile('${selectedItem.id}')">Download</button>
+                        <button class="console-btn small danger" onclick="deleteFile('${selectedItem.id}')">Delete</button>
+                    </div>
+                `;
             }
         }
 
@@ -234,6 +408,12 @@
             if (bytes < 1024) return bytes + ' B';
             if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         window.downloadFile = function(id) {
