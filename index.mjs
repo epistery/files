@@ -11,8 +11,8 @@ import express from 'express';
 import fileUpload from 'express-fileupload';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { readFileSync, existsSync, mkdirSync, readdirSync, writeFileSync, unlinkSync } from 'fs';
 import crypto from 'crypto';
+import { Config } from 'epistery';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -28,17 +28,82 @@ export default class FilesAgent {
     }
 
     /**
-     * Get domain-specific data directory
+     * Read JSON file from domain config directory
      */
-    getDataDir(domain) {
-        if (!domain) {
-            domain = 'default';
+    readJson(domain, filename) {
+        const config = new Config();
+        config.setPath(domain);
+        try {
+            const data = config.readFile(filename);
+            return JSON.parse(data.toString());
+        } catch (error) {
+            if (error.code === 'ENOENT') return null;
+            throw error;
         }
-        const dataDir = join(__dirname, 'data', domain);
-        if (!existsSync(dataDir)) {
-            mkdirSync(dataDir, { recursive: true });
+    }
+
+    /**
+     * Write JSON file to domain config directory
+     */
+    writeJson(domain, filename, data) {
+        const config = new Config();
+        config.setPath(domain);
+        config.save();
+        config.writeFile(filename, JSON.stringify(data, null, 2));
+    }
+
+    /**
+     * Delete JSON file from domain config directory
+     */
+    deleteJson(domain, filename) {
+        const config = new Config();
+        config.setPath(domain);
+        try {
+            const fs = require('fs');
+            const filepath = join(config.currentDir, filename);
+            if (fs.existsSync(filepath)) {
+                fs.unlinkSync(filepath);
+                return true;
+            }
+        } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
         }
-        return dataDir;
+        return false;
+    }
+
+    /**
+     * Get file index (tracks all files and folders)
+     */
+    getFileIndex(domain) {
+        return this.readJson(domain, 'files-index.json') || { files: {}, folders: [] };
+    }
+
+    /**
+     * Save file index
+     */
+    saveFileIndex(domain, index) {
+        this.writeJson(domain, 'files-index.json', index);
+    }
+
+    /**
+     * Get file metadata by ID
+     */
+    getFile(domain, fileId) {
+        return this.readJson(domain, `files-${fileId}.json`);
+    }
+
+    /**
+     * Save file metadata
+     */
+    saveFile(domain, metadata) {
+        this.writeJson(domain, `files-${metadata.id}.json`, metadata);
+    }
+
+    /**
+     * Delete file metadata
+     */
+    deleteFile(domain, fileId) {
+        return this.deleteJson(domain, `files-${fileId}.json`);
     }
 
     /**
@@ -139,27 +204,27 @@ export default class FilesAgent {
             try {
                 const domain = req.hostname || 'localhost';
                 const folder = req.query.folder || '';
-                const dataDir = this.getDataDir(domain);
-                const folderPath = join(dataDir, folder);
+                const index = this.getFileIndex(domain);
 
-                if (!existsSync(folderPath)) {
-                    return res.json({ files: [], folders: [] });
-                }
+                // Filter files by folder
+                const files = Object.values(index.files)
+                    .filter(f => f.folder === folder)
+                    .map(f => this.getFile(domain, f.id))
+                    .filter(Boolean);
 
-                const items = readdirSync(folderPath, { withFileTypes: true });
-                const files = [];
-                const folders = [];
-
-                for (const item of items) {
-                    if (item.isDirectory()) {
-                        folders.push({ name: item.name, path: join(folder, item.name) });
-                    } else if (item.name.endsWith('.json')) {
-                        // Read file metadata
-                        const metaPath = join(folderPath, item.name);
-                        const metadata = JSON.parse(readFileSync(metaPath, 'utf8'));
-                        files.push(metadata);
-                    }
-                }
+                // Get unique subfolders
+                const folders = [...new Set(
+                    Object.values(index.files)
+                        .filter(f => f.folder.startsWith(folder) && f.folder !== folder)
+                        .map(f => {
+                            const relativePath = folder ? f.folder.slice(folder.length + 1) : f.folder;
+                            return relativePath.split('/')[0];
+                        })
+                        .filter(Boolean)
+                )].map(name => ({
+                    name,
+                    path: folder ? `${folder}/${name}` : name
+                }));
 
                 res.json({ files, folders });
             } catch (error) {
@@ -175,16 +240,12 @@ export default class FilesAgent {
                     return res.status(400).json({ error: 'No file uploaded' });
                 }
 
-                // Check upload permission
                 if (!req.episteryClient) {
                     return res.status(401).json({ error: 'Not authenticated' });
                 }
 
                 const uploadList = this.config.uploadList || 'files::upload';
-                const canUpload = await this.epistery.isListed(
-                    req.episteryClient.address,
-                    uploadList
-                );
+                const canUpload = await this.epistery.isListed(req.episteryClient.address, uploadList);
 
                 if (!canUpload) {
                     return res.status(403).json({ error: 'Not authorized to upload' });
@@ -194,14 +255,12 @@ export default class FilesAgent {
                 const folder = (req.body && req.body.folder) ? req.body.folder : '';
                 const domain = req.hostname || 'localhost';
 
-                // Read file data (handles both temp files and in-memory)
+                // Read file data
                 let fileData;
                 if (file.tempFilePath) {
-                    // Large file stored as temp file
                     const fs = await import('fs/promises');
                     fileData = await fs.readFile(file.tempFilePath);
                 } else {
-                    // Small file in memory
                     fileData = file.data;
                 }
 
@@ -214,13 +273,12 @@ export default class FilesAgent {
                     console.error(`[Files] Failed to upload ${file.name} (${sizeKB} KB)`);
                     return res.status(500).json({
                         error: 'IPFS upload failed',
-                        details: 'File may be too large for the IPFS gateway (limit appears to be ~128KB)',
-                        size: fileData.length,
-                        suggestion: 'Try a smaller file or contact admin to increase gateway limits'
+                        details: 'File may be too large for the IPFS gateway',
+                        size: fileData.length
                     });
                 }
 
-                // Create file metadata (data wallet)
+                // Create file metadata
                 const fileId = crypto.randomBytes(16).toString('hex');
                 const metadata = {
                     id: fileId,
@@ -235,15 +293,13 @@ export default class FilesAgent {
                     hash: crypto.createHash('md5').update(fileData).digest('hex')
                 };
 
-                // Save metadata to disk
-                const dataDir = this.getDataDir(domain);
-                const folderPath = join(dataDir, folder);
-                if (!existsSync(folderPath)) {
-                    mkdirSync(folderPath, { recursive: true });
-                }
+                // Save file metadata
+                this.saveFile(domain, metadata);
 
-                const metaPath = join(folderPath, `${fileId}.json`);
-                writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+                // Update index
+                const index = this.getFileIndex(domain);
+                index.files[fileId] = { id: fileId, folder: folder };
+                this.saveFileIndex(domain, index);
 
                 res.json(metadata);
             } catch (error) {
@@ -257,17 +313,12 @@ export default class FilesAgent {
             try {
                 const { id } = req.params;
                 const domain = req.hostname || 'localhost';
-                const dataDir = this.getDataDir(domain);
+                const metadata = this.getFile(domain, id);
 
-                // Find metadata file
-                const metaPath = this.findMetadataFile(dataDir, id);
-                if (!metaPath) {
+                if (!metadata) {
                     return res.status(404).json({ error: 'File not found' });
                 }
 
-                const metadata = JSON.parse(readFileSync(metaPath, 'utf8'));
-
-                // Redirect to IPFS gateway
                 res.redirect(metadata.ipfsUrl);
             } catch (error) {
                 console.error('[Files] Download error:', error);
@@ -281,30 +332,29 @@ export default class FilesAgent {
                 const { id } = req.params;
                 const domain = req.hostname || 'localhost';
 
-                // Check manage permission
                 if (!req.episteryClient) {
                     return res.status(401).json({ error: 'Not authenticated' });
                 }
 
                 const manageList = this.config.manageList || 'files::manage';
-                const canManage = await this.epistery.isListed(
-                    req.episteryClient.address,
-                    manageList
-                );
+                const canManage = await this.epistery.isListed(req.episteryClient.address, manageList);
 
                 if (!canManage) {
                     return res.status(403).json({ error: 'Not authorized to manage files' });
                 }
 
-                const dataDir = this.getDataDir(domain);
-                const metaPath = this.findMetadataFile(dataDir, id);
-
-                if (!metaPath) {
+                const metadata = this.getFile(domain, id);
+                if (!metadata) {
                     return res.status(404).json({ error: 'File not found' });
                 }
 
-                // Delete metadata file (IPFS content remains immutable)
-                unlinkSync(metaPath);
+                // Delete file metadata
+                this.deleteFile(domain, id);
+
+                // Update index
+                const index = this.getFileIndex(domain);
+                delete index.files[id];
+                this.saveFileIndex(domain, index);
 
                 res.json({ success: true });
             } catch (error) {
@@ -314,25 +364,5 @@ export default class FilesAgent {
         });
 
         router.use('/api', apiRouter);
-    }
-
-    /**
-     * Find metadata file by ID (recursively search folders)
-     */
-    findMetadataFile(dir, id) {
-        const items = readdirSync(dir, { withFileTypes: true });
-
-        for (const item of items) {
-            const fullPath = join(dir, item.name);
-
-            if (item.isDirectory()) {
-                const found = this.findMetadataFile(fullPath, id);
-                if (found) return found;
-            } else if (item.name === `${id}.json`) {
-                return fullPath;
-            }
-        }
-
-        return null;
     }
 }
