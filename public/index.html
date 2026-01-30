@@ -112,6 +112,46 @@
         input[type="file"] {
             display: none;
         }
+
+        .request-access-widget {
+            margin-bottom: var(--spacer);
+        }
+
+        #folder-tree {
+            max-height: 400px;
+            overflow-y: auto;
+            font-size: 0.85rem;
+        }
+
+        .tree-item {
+            padding: var(--spacerhalf) 0;
+            cursor: pointer;
+            transition: color 0.2s;
+            user-select: none;
+        }
+
+        .tree-item:hover {
+            color: var(--action-color);
+        }
+
+        .tree-item.active {
+            color: var(--action-color);
+            font-weight: 600;
+        }
+
+        .tree-folder {
+            margin-left: var(--spacer);
+        }
+
+        .tree-folder-name {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .tree-folder-icon {
+            font-size: 0.9rem;
+        }
     </style>
     <script src="/script/common.js"></script>
 </head>
@@ -136,6 +176,13 @@
         </div>
 
         <aside class="console-sidebar">
+            <div class="request-access-widget" data-widget="requestAccess" data-agent="@epistery/files" data-list="files::upload"></div>
+
+            <div class="sidebar-section" id="explorer-section">
+                <h3>File Explorer</h3>
+                <div id="folder-tree"></div>
+            </div>
+
             <div class="sidebar-section">
                 <h3>Actions</h3>
                 <div class="sidebar-buttons">
@@ -153,6 +200,7 @@
         </aside>
     </main>
 
+    <script type="module" src="/script/widgets.mjs"></script>
     <script type="module">
         // Load navigation
         fetch('/api/nav-menu')
@@ -165,9 +213,11 @@
         const detailsSection = document.getElementById('details-section');
         const fileDetails = document.getElementById('file-details');
         const domainCrumb = document.getElementById('domain-crumb');
+        const folderTree = document.getElementById('folder-tree');
 
         let currentFolder = '';
         let selectedItem = null;
+        let allFolders = new Set(); // Track all discovered folders for tree view
 
         // Set domain name
         domainCrumb.textContent = window.location.hostname || 'localhost';
@@ -295,9 +345,79 @@
                 }
 
                 fileGrid.innerHTML = html;
+
+                // Update folder tree with discovered folders
+                data.folders.forEach(f => allFolders.add(f.path));
+                updateFolderTree();
             } catch (error) {
                 console.error('Failed to load files:', error);
             }
+        }
+
+        // Update folder tree
+        function updateFolderTree() {
+            if (!folderTree) return;
+
+            // Build tree structure
+            const tree = buildFolderTree(Array.from(allFolders));
+            const domain = window.location.hostname || 'localhost';
+
+            let html = `
+                <div class="tree-item ${currentFolder === '' ? 'active' : ''}" onclick="navigateToFolder(''); return false;">
+                    <div class="tree-folder-name">
+                        <span class="tree-folder-icon">📁</span>
+                        <span>${escapeHtml(domain)}</span>
+                    </div>
+                </div>
+            `;
+
+            html += renderTreeNode(tree, '');
+            folderTree.innerHTML = html;
+        }
+
+        // Build folder tree structure
+        function buildFolderTree(folders) {
+            const tree = {};
+
+            for (const folderPath of folders) {
+                const parts = folderPath.split('/').filter(p => p);
+                let current = tree;
+
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    if (!current[part]) {
+                        current[part] = {};
+                    }
+                    current = current[part];
+                }
+            }
+
+            return tree;
+        }
+
+        // Render tree node recursively
+        function renderTreeNode(node, parentPath) {
+            let html = '';
+            const entries = Object.keys(node).sort();
+
+            for (const name of entries) {
+                const path = parentPath ? `${parentPath}/${name}` : name;
+                const isActive = currentFolder === path;
+
+                html += `
+                    <div class="tree-folder">
+                        <div class="tree-item ${isActive ? 'active' : ''}" onclick="navigateToFolder('${escapeHtml(path)}'); return false;">
+                            <div class="tree-folder-name">
+                                <span class="tree-folder-icon">📁</span>
+                                <span>${escapeHtml(name)}</span>
+                            </div>
+                        </div>
+                        ${renderTreeNode(node[name], path)}
+                    </div>
+                `;
+            }
+
+            return html;
         }
 
         // Update breadcrumb
