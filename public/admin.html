@@ -5,6 +5,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Files Admin - Epistery</title>
     <link rel="stylesheet" href="/style/static.css">
+    <style>
+        .stats {
+            display: flex;
+            gap: 2em;
+            margin-bottom: 2em;
+        }
+        .stat {
+            text-align: center;
+            padding: 1em;
+            background: var(--bg-color-quiet);
+            border-radius: 8px;
+            flex: 1;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: 600;
+            color: var(--text-color);
+        }
+        .stat-label {
+            font-size: 0.875em;
+            color: var(--text-color-quiet);
+            margin-top: 0.25em;
+        }
+        .acl-iframe {
+            width: 100%;
+            border: 0;
+            height: 300px;
+            background: var(--bg-color);
+        }
+        .error {
+            padding: 1em;
+            background: #ffe6e6;
+            color: #cc0000;
+            border-radius: 4px;
+            margin-bottom: 1em;
+        }
+    </style>
 </head>
 <body>
     <header>
@@ -20,21 +57,71 @@
         <div class="console-main">
             <div class="console-header">
                 <h1>Files Admin</h1>
-                <p class="console-tagline">Configure file storage settings</p>
+                <p class="console-tagline">Manage file storage and access control</p>
+            </div>
+
+            <div id="error" class="error" style="display: none;"></div>
+
+            <div class="stats" id="stats">
+                <div class="stat">
+                    <div class="stat-value" id="file-count">-</div>
+                    <div class="stat-label">Files</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="folder-count">-</div>
+                    <div class="stat-label">Folders</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="storage-type">-</div>
+                    <div class="stat-label">Storage</div>
+                </div>
             </div>
 
             <div class="console-panel">
-                <h2>Configuration</h2>
-                <p>File storage configuration coming soon...</p>
+                <h2>Access Control</h2>
+                <p style="margin-bottom: var(--spacer); color: var(--text-color-quiet);">
+                    Manage who can upload, view, and manage files.
+                </p>
+                <iframe class="acl-iframe" src="/page/acl?agent=@epistery/files"></iframe>
+            </div>
+
+            <div class="console-panel">
+                <h2>Actions</h2>
+                <button class="console-btn" onclick="window.location.href='/agent/epistery/files'">Go to Files</button>
             </div>
         </div>
     </main>
 
+    <script type="module" src="/script/widgets.mjs"></script>
     <script type="module">
+        const API_BASE = '/agent/epistery/files';
+
         // Load navigation
         fetch('/api/nav-menu')
             .then(r => r.text())
             .then(html => document.getElementById('nav-menu').innerHTML = html);
+
+        async function loadStats() {
+            try {
+                const response = await fetch(API_BASE + '/status');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const status = await response.json();
+
+                document.getElementById('file-count').textContent = status.fileCount || 0;
+                document.getElementById('folder-count').textContent = status.folderCount || 0;
+                document.getElementById('storage-type').textContent = status.storage || 'Unknown';
+
+            } catch (error) {
+                console.error('[files-admin] Load error:', error);
+                document.getElementById('error').textContent = 'Failed to load stats: ' + error.message;
+                document.getElementById('error').style.display = 'block';
+            }
+        }
+
+        // Load stats on page load
+        loadStats();
     </script>
 </body>
 </html>
