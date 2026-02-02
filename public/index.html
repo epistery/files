@@ -267,8 +267,40 @@
         };
 
         // Create folder function
-        window.createFolder = function() {
-            alert('Folder creation coming soon - folders are created automatically when uploading files with paths');
+        window.createFolder = async function() {
+            const name = prompt('Enter folder name:');
+            if (!name) return;
+
+            // Validate folder name
+            if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+                alert('Invalid folder name. Use only letters, numbers, hyphens, and underscores.');
+                return;
+            }
+
+            try {
+                const response = await fetch('/agent/epistery/files/api/folder', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        parentFolder: currentFolder
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to create folder');
+                }
+
+                const result = await response.json();
+                console.log('Folder created:', result);
+                loadFiles(currentFolder); // Reload current view
+            } catch (error) {
+                console.error('Create folder error:', error);
+                alert('Failed to create folder: ' + error.message);
+            }
         };
 
         // Navigate to folder
@@ -489,6 +521,9 @@
                         <div class="detail-label">Path</div>
                         <div class="detail-value">${escapeHtml(selectedItem.path)}</div>
                     </div>
+                    <div style="margin-top: var(--spacer); display: flex; flex-direction: column; gap: var(--spacerhalf);">
+                        <button class="console-btn small danger" onclick="deleteFolder('${escapeHtml(selectedItem.path)}')">Delete Folder</button>
+                    </div>
                 `;
             } else {
                 fileDetails.innerHTML = `
@@ -557,6 +592,28 @@
             } catch (error) {
                 console.error('Delete error:', error);
                 alert('Failed to delete file: ' + error.message);
+            }
+        };
+
+        window.deleteFolder = async function(path) {
+            if (!confirm(`Delete folder "${path}"? This will fail if the folder is not empty.`)) return;
+
+            try {
+                const response = await fetch(`/agent/epistery/files/api/folder?path=${encodeURIComponent(path)}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Delete failed');
+                }
+
+                // Navigate to parent folder
+                const parentPath = path.split('/').slice(0, -1).join('/');
+                loadFiles(parentPath);
+            } catch (error) {
+                console.error('Delete folder error:', error);
+                alert('Failed to delete folder: ' + error.message);
             }
         };
 
