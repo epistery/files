@@ -23,7 +23,7 @@ export default class FilesAgent {
     constructor(config = {}) {
         this.config = config;
         this.epistery = null;
-        this.storage = null;
+        this.storageBackends = new Map();
     }
 
     /**
@@ -108,10 +108,10 @@ export default class FilesAgent {
      * Get or initialize storage for a domain
      */
     async getStorage(domain) {
-        if (!this.storage) {
-            this.storage = await StorageFactory.create(null, domain, 'files');
+        if (!this.storageBackends.has(domain)) {
+            this.storageBackends.set(domain, await StorageFactory.create(null, domain, 'files'));
         }
-        return this.storage;
+        return this.storageBackends.get(domain);
     }
 
     /**
@@ -367,13 +367,11 @@ export default class FilesAgent {
                 const metaKey = `${keyBase}._i`;
 
                 // Upload raw file to Storj storage
-                console.log(`[Files] Uploading ${file.name} (${fileData.length} bytes) to storage...`);
                 const storage = await this.getStorage(domain);
 
                 try {
                     // Save raw file
                     await storage.writeFile(fileKey, fileData);
-                    console.log(`[Files] Uploaded raw file: ${fileKey}`);
 
                     // Create data wallet metadata
                     const now = new Date().toISOString();
@@ -393,7 +391,6 @@ export default class FilesAgent {
 
                     // Save metadata
                     await storage.writeFile(metaKey, JSON.stringify(dataWallet, null, 2));
-                    console.log(`[Files] Uploaded metadata: ${metaKey}`);
                 } catch (error) {
                     console.error(`[Files] Storage upload failed:`, error);
                     return res.status(500).json({
