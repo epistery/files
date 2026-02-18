@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Files Admin - Epistery</title>
     <link rel="stylesheet" href="/style/static.css">
+    <script src="/script/common.js"></script>
     <style>
         .stats {
             display: flex;
@@ -44,14 +45,7 @@
     </style>
 </head>
 <body>
-    <header>
-        <nav>
-            <a href="/?home" class="logo">
-                <img alt="logo" src="/image/epistery-logo-32.svg" class="logo-window">
-            </a>
-            <div class="nav-menu" id="nav-menu"></div>
-        </nav>
-    </header>
+    <header data-widget="header"></header>
 
     <main class="console-layout no-sidebar">
         <div class="console-main">
@@ -92,14 +86,8 @@
         </div>
     </main>
 
-    <script type="module" src="/script/widgets.mjs"></script>
     <script type="module">
         const API_BASE = '/agent/epistery/files';
-
-        // Load navigation
-        fetch('/api/nav-menu')
-            .then(r => r.text())
-            .then(html => document.getElementById('nav-menu').innerHTML = html);
 
         async function loadStats() {
             try {

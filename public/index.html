@@ -156,13 +156,7 @@
     <script src="/script/common.js"></script>
 </head>
 <body>
-    <header>
-        <nav>
-            <a href="/?home" class="logo">
-                <img alt="logo" src="/image/epistery-logo-32.svg" class="logo-window">
-            </a>
-        </nav>
-    </header>
+    <header data-widget="header"></header>
 
     <main class="console-layout">
         <div class="console-main" id="drop-zone">
@@ -200,13 +194,7 @@
         </aside>
     </main>
 
-    <script type="module" src="/script/widgets.mjs"></script>
     <script type="module">
-        // Load navigation
-        fetch('/api/nav-menu')
-            .then(r => r.text())
-            .then(html => document.getElementById('nav-menu').innerHTML = html);
-
         const fileInput = document.getElementById('file-input');
         const fileGrid = document.getElementById('file-grid');
         const dropZone = document.getElementById('drop-zone');
