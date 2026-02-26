@@ -129,6 +129,7 @@ export default class FilesAgent {
             const access = await req.domainAcl.checkAgentAccess('@epistery/files', req.episteryClient.address, req.hostname);
             result.admin = access.level >= 3;
             result.edit = access.level >= 2;  // editors and admins can upload/manage
+            result.read = access.level >= 1;  // readers and above can view
             return result;
         } catch (error) {
             console.error('[Files] ACL check error:', error);
@@ -167,7 +168,53 @@ export default class FilesAgent {
         });
 
         // Main UI
-        router.get('/', (req, res) => {
+        router.get('/', async (req, res) => {
+            const permissions = await this.getPermissions(req);
+            if (!permissions.read) {
+                const address = req.episteryClient?.address || '';
+                const addressDisplay = address ? `${address.slice(0,8)}...${address.slice(-6)}` : 'unknown';
+                return res.status(403).send(`
+                    <!DOCTYPE html>
+                    <html><head><title>Access Denied</title></head>
+                    <body style="font-family: sans-serif; max-width: 600px; margin: 100px auto; text-align: center;">
+                        <h1>Access Denied</h1>
+                        <p>Browser address: <span style='font-family:monospace;font-weight:bold'>${addressDisplay}</span></p>
+                        <p>You do not have access to files.</p>
+                        <div id="requestForm" style="margin-top:24px;${address ? '' : 'display:none'}">
+                            <input type="text" id="requestName" placeholder="Name (optional)" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;">
+                            <textarea id="requestMessage" placeholder="Message for the host (optional)" style="width:100%;min-height:60px;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;margin-bottom:8px;font-family:inherit;resize:vertical"></textarea>
+                            <button onclick="submitRequest()" style="padding:8px 24px;background:#2d5016;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px">Request Access</button>
+                        </div>
+                        <p id="statusMsg" style="margin-top:16px"></p>
+                        <script>
+                            async function submitRequest() {
+                                try {
+                                    const resp = await fetch('/api/acl/request-access', {
+                                        method: 'POST',
+                                        headers: {'Content-Type':'application/json'},
+                                        body: JSON.stringify({
+                                            address: '${address}',
+                                            listName: 'epistery::reader',
+                                            agentName: '@epistery/files',
+                                            name: document.getElementById('requestName').value.trim(),
+                                            message: document.getElementById('requestMessage').value.trim()
+                                        })
+                                    });
+                                    if (resp.ok) {
+                                        document.getElementById('requestForm').style.display = 'none';
+                                        document.getElementById('statusMsg').textContent = 'Access request submitted. Please wait for approval.';
+                                    } else {
+                                        const err = await resp.json();
+                                        document.getElementById('statusMsg').textContent = err.error || 'Request failed';
+                                    }
+                                } catch(e) {
+                                    document.getElementById('statusMsg').textContent = 'Request failed: ' + e.message;
+                                }
+                            }
+                        </script>
+                    </body></html>
+                `);
+            }
             res.sendFile(join(__dirname, 'public', 'index.html'));
         });
 
