@@ -14,7 +14,6 @@ import { dirname, join } from 'path';
 import { existsSync, unlinkSync } from 'fs';
 import crypto from 'crypto';
 import { Config } from 'epistery';
-import StorageFactory from '../epistery-host/utils/storage/StorageFactory.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -109,7 +108,7 @@ export default class FilesAgent {
      */
     async getStorage(domain) {
         if (!this.storageBackends.has(domain)) {
-            this.storageBackends.set(domain, await StorageFactory.create(null, domain, 'files'));
+            this.storageBackends.set(domain, await this.config.getStorage(domain, 'files'));
         }
         return this.storageBackends.get(domain);
     }
