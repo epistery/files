@@ -104,7 +104,7 @@ export default class FilesAgent {
     }
 
     /**
-     * Get or initialize storage for a domain
+     * Get or initialize storage for a domain (encrypted, for text/metadata)
      */
     async getStorage(domain) {
         if (!this.storageBackends.has(domain)) {
@@ -114,10 +114,20 @@ export default class FilesAgent {
     }
 
     /**
+     * Get raw (non-encrypting) storage for binary file content.
+     * EncryptedStorage uses TextEncoder which corrupts binary data;
+     * file content is stored unencrypted while metadata stays encrypted.
+     */
+    async getRawStorage(domain) {
+        const storage = await this.getStorage(domain);
+        return storage.storage || storage;
+    }
+
+    /**
      * Get permissions using DomainACL
      */
     async getPermissions(req) {
-        const result = { admin: false, edit: false, read: true };
+        const result = { admin: false, edit: false, read: true, enableRequestAccess: true };
 
         // Everyone has read access by default
         if (!req.episteryClient || !req.domainAcl) {
@@ -189,7 +199,7 @@ export default class FilesAgent {
                 const storage = await this.getStorage(req.domain);
                 res.json({
                     agent: 'files',
-                    version: '1.0.0',
+                    version: '0.2.0',
                     fileCount: Object.keys(index.files).length,
                     folderCount: index.folders.length,
                     storage: storage.constructor.name
@@ -309,8 +319,8 @@ export default class FilesAgent {
                     .map(f => this.getFile(domain, f.id))
                     .filter(Boolean);
 
-                // Get unique subfolders
-                const folders = [...new Set(
+                // Get unique subfolders from index
+                const folderSet = new Set(
                     Object.values(index.files)
                         .filter(f => f.folder.startsWith(folder) && f.folder !== folder)
                         .map(f => {
@@ -318,7 +328,27 @@ export default class FilesAgent {
                             return relativePath.split('/')[0];
                         })
                         .filter(Boolean)
-                )].map(name => ({
+                );
+
+                // Also discover empty folders from storage .folder placeholders
+                try {
+                    const storage = await this.getStorage(domain);
+                    const prefix = folder ? `${folder}/` : '';
+                    const storageFiles = await storage.listFiles(prefix);
+                    if (storageFiles) {
+                        for (const key of storageFiles) {
+                            if (key.endsWith('/.folder')) {
+                                const relative = prefix ? key.slice(prefix.length) : key;
+                                const topFolder = relative.split('/')[0];
+                                if (topFolder) folderSet.add(topFolder);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // Storage listing may not be supported; fall through
+                }
+
+                const folders = [...folderSet].sort().map(name => ({
                     name,
                     path: folder ? `${folder}/${name}` : name
                 }));
@@ -367,12 +397,13 @@ export default class FilesAgent {
                 const fileKey = `${keyBase}.${ext}`;
                 const metaKey = `${keyBase}._i`;
 
-                // Upload raw file to Storj storage
+                // Upload to storage: raw backend for binary content, encrypted for metadata
+                const rawStorage = await this.getRawStorage(domain);
                 const storage = await this.getStorage(domain);
 
                 try {
-                    // Save raw file
-                    await storage.writeFile(fileKey, fileData);
+                    // Save raw file (binary data bypasses encryption)
+                    await rawStorage.writeFile(fileKey, fileData);
 
                     // Create data wallet metadata
                     const now = new Date().toISOString();
@@ -429,6 +460,62 @@ export default class FilesAgent {
             }
         });
 
+        // File metadata (no content download)
+        apiRouter.get('/file/:id/meta', async (req, res) => {
+            try {
+                const { id } = req.params;
+                const domain = req.hostname || 'localhost';
+                const metadata = this.getFile(domain, id);
+
+                if (!metadata) {
+                    return res.status(404).json({ error: 'File not found' });
+                }
+
+                res.json(metadata);
+            } catch (error) {
+                console.error('[Files] Meta error:', error);
+                res.status(500).json({ error: error.message });
+            }
+        });
+
+        // File preview (inline display)
+        apiRouter.get('/file/:id/preview', async (req, res) => {
+            try {
+                const { id } = req.params;
+                const domain = req.hostname || 'localhost';
+                const metadata = this.getFile(domain, id);
+
+                if (!metadata) {
+                    return res.status(404).end();
+                }
+
+                // Read through EncryptedStorage — it handles both:
+                //   encrypted envelopes (decrypts) and raw binary (returns as-is)
+                const storage = await this.getStorage(domain);
+                const fileKey = metadata.fileKey || metadata.storageKey;
+                let fileData;
+                try {
+                    fileData = await storage.readFile(fileKey);
+                } catch (e) {
+                    return res.status(404).end();
+                }
+
+                // Ensure Buffer for correct binary transport
+                if (typeof fileData === 'string') {
+                    fileData = Buffer.from(fileData, 'binary');
+                }
+
+                res.setHeader('Content-Type', metadata.mimetype);
+                res.setHeader('Content-Disposition', `inline; filename="${metadata.name}"`);
+                res.setHeader('Content-Length', fileData.length);
+                res.setHeader('Cache-Control', 'private, max-age=3600');
+                res.send(fileData);
+            } catch (error) {
+                console.error('[Files] Preview error:', error);
+                res.status(500).end();
+            }
+        });
+
         // Download file from storage
         apiRouter.get('/file/:id/download', async (req, res) => {
             try {
@@ -440,18 +527,94 @@ export default class FilesAgent {
                     return res.status(404).json({ error: 'File not found' });
                 }
 
+                // Read through EncryptedStorage (handles encrypted + raw content)
                 const storage = await this.getStorage(domain);
-
-                // Read from raw file (not metadata)
-                const fileKey = metadata.fileKey || metadata.storageKey; // backward compat
+                const fileKey = metadata.fileKey || metadata.storageKey;
                 const fileData = await storage.readFile(fileKey);
+
+                // Ensure Buffer for correct binary transport
+                const buf = typeof fileData === 'string' ? Buffer.from(fileData, 'binary') : fileData;
 
                 res.setHeader('Content-Type', metadata.mimetype);
                 res.setHeader('Content-Disposition', `attachment; filename="${metadata.name}"`);
-                res.setHeader('Content-Length', metadata.size);
-                res.send(fileData);
+                res.setHeader('Content-Length', buf.length);
+                res.send(buf);
             } catch (error) {
                 console.error('[Files] Download error:', error);
+                res.status(500).json({ error: error.message });
+            }
+        });
+
+        // Rename file
+        apiRouter.patch('/file/:id', async (req, res) => {
+            try {
+                const { id } = req.params;
+                const { newName } = req.body;
+                const domain = req.hostname || 'localhost';
+
+                if (!req.episteryClient) {
+                    return res.status(401).json({ error: 'Not authenticated' });
+                }
+
+                if (!newName || !newName.trim()) {
+                    return res.status(400).json({ error: 'newName is required' });
+                }
+
+                const metadata = this.getFile(domain, id);
+                if (!metadata) {
+                    return res.status(404).json({ error: 'File not found' });
+                }
+
+                // Check permissions - only file owner or admins can rename
+                const permissions = await this.getPermissions(req);
+                const isOwner = metadata.uploadedBy.toLowerCase() === req.episteryClient.address.toLowerCase();
+
+                if (!isOwner && !permissions.admin) {
+                    return res.status(403).json({ error: 'Not authorized to rename this file. Only owner or admin can rename.' });
+                }
+
+                const rawStorage = await this.getRawStorage(domain);
+                const storage = await this.getStorage(domain);
+                const oldFileKey = metadata.fileKey || metadata.storageKey;
+                const ext = newName.split('.').pop() || metadata.name.split('.').pop() || 'bin';
+                const newFileKey = metadata.keyBase ? `${metadata.keyBase}.${ext}` : oldFileKey;
+
+                // If the storage key changes (different extension), copy and delete
+                if (newFileKey !== oldFileKey) {
+                    try {
+                        const fileData = await rawStorage.readFile(oldFileKey);
+                        await rawStorage.writeFile(newFileKey, fileData);
+                        await rawStorage.deleteFile(oldFileKey);
+                    } catch (error) {
+                        console.warn('[Files] Storage rename error:', error.message);
+                    }
+                }
+
+                // Update metadata
+                metadata.name = newName.trim();
+                metadata.fileKey = newFileKey;
+                this.saveFile(domain, metadata);
+
+                // Update storage metadata file
+                if (metadata.keyBase) {
+                    const metaKey = `${metadata.keyBase}._i`;
+                    try {
+                        const metaData = await storage.readFile(metaKey);
+                        const walletMeta = JSON.parse(metaData.toString());
+                        walletMeta.name = newName.trim();
+                        walletMeta._modified = new Date().toISOString();
+                        walletMeta._modifiedBy = req.episteryClient.address;
+                        walletMeta._ext = ext;
+                        walletMeta.originalFileKey = newFileKey;
+                        await storage.writeFile(metaKey, JSON.stringify(walletMeta, null, 2));
+                    } catch (error) {
+                        console.warn('[Files] Storage meta update error:', error.message);
+                    }
+                }
+
+                res.json({ success: true, file: metadata });
+            } catch (error) {
+                console.error('[Files] Rename error:', error);
                 res.status(500).json({ error: error.message });
             }
         });
@@ -480,13 +643,13 @@ export default class FilesAgent {
                 }
 
                 // Delete from storage (both raw file and metadata)
-                const storage = await this.getStorage(domain);
+                const rawStorage = await this.getRawStorage(domain);
                 if (metadata.keyBase) {
                     const fileKey = metadata.fileKey || `${metadata.keyBase}.${metadata.name.split('.').pop()}`;
                     const metaKey = `${metadata.keyBase}._i`;
 
                     try {
-                        await storage.deleteFiles([fileKey, metaKey]);
+                        await rawStorage.deleteFiles([fileKey, metaKey]);
                         console.log(`[Files] Deleted from storage: ${fileKey}, ${metaKey}`);
                     } catch (error) {
                         console.warn('[Files] Error deleting from storage:', error.message);

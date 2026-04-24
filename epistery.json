@@ -1,15 +1,88 @@
 {
   "name": "@epistery/files",
   "title": "Files",
-  "version": "0.1.0",
-  "description": "IPFS file management with origin tracking via data wallets",
+  "version": "0.2.0",
+  "description": "File management with Storj storage and data wallet origin tracking",
   "author": "Epistery",
   "main": "index.mjs",
   "icon": "/agent/epistery/files/icon.svg",
   "widget": "/agent/epistery/files/widget",
+  "noUserInterface": false,
   "config": {
     "uploadList": "files::upload",
-    "manageList": "files::manage",
-    "ipfsGateway": "https://rootz.digital/api/v0"
-  }
+    "manageList": "files::manage"
+  },
+  "tools": [
+    {
+      "name": "files_list",
+      "scope": "files:read",
+      "description": "List files and folders in a directory. Returns arrays of files and folders.",
+      "method": "GET",
+      "path": "/api/list",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "folder": { "type": "string", "description": "Folder path to list. Empty string or omitted for root." }
+        }
+      }
+    },
+    {
+      "name": "files_metadata",
+      "scope": "files:read",
+      "description": "Get file metadata by ID. Returns name, size, type, hash, upload info.",
+      "method": "GET",
+      "path": "/api/file/{id}/meta",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "File ID (hex string)" }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "files_create_folder",
+      "scope": "files:write",
+      "description": "Create a new folder. Requires editor access.",
+      "method": "POST",
+      "path": "/api/folder",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Folder name (letters, numbers, hyphens, underscores only)" },
+          "parentFolder": { "type": "string", "description": "Parent folder path. Empty string or omitted for root." }
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "files_rename",
+      "scope": "files:write",
+      "description": "Rename a file. Requires owner or admin access.",
+      "method": "PATCH",
+      "path": "/api/file/{id}",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "File ID (hex string)" },
+          "newName": { "type": "string", "description": "New file name" }
+        },
+        "required": ["id", "newName"]
+      }
+    },
+    {
+      "name": "files_delete",
+      "scope": "files:write",
+      "description": "Delete a file. Requires owner or admin access.",
+      "method": "DELETE",
+      "path": "/api/file/{id}",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "File ID (hex string)" }
+        },
+        "required": ["id"]
+      }
+    }
+  ]
 }

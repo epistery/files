@@ -6,8 +6,68 @@
     <title>Files - Epistery</title>
     <link rel="stylesheet" href="/style/static.css">
     <style>
+        /* Entypo icons used by files agent (self-contained) */
+        .icon-folder:before { content: "\EAAD" }
+        .icon-document:before { content: "\EA7F" }
+        .icon-upload-to-cloud:before { content: "\EB83" }
+        .icon-list:before { content: "\EAE6" }
+        .icon-grid:before { content: "\EABC" }
+        .icon-circle-with-minus:before { content: "\EA53" }
+        .icon-pencil:before { content: "\EB15" }
+        .icon-dots-three-horizontal:before { content: "\EA82" }
+        .icon-info:before { content: "\EACE" }
+
+        /* Toolbar */
+        .files-toolbar {
+            display: flex;
+            align-items: center;
+            gap: var(--spacerhalf);
+            padding: var(--spacerhalf) var(--spacer);
+            border-bottom: 1px solid var(--page-border);
+            background: var(--bg-color);
+        }
+        .toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: var(--spacerhalf);
+        }
+        .toolbar-right {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: var(--spacerthird);
+        }
+        .toolbar-btn {
+            background: none;
+            border: 1px solid var(--page-border);
+            border-radius: 4px;
+            padding: 4px 8px;
+            cursor: pointer;
+            color: var(--text-color);
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .toolbar-btn:hover {
+            background: var(--bg-color-quiet-d);
+        }
+        .toolbar-btn.active {
+            background: var(--action-color);
+            color: #fff;
+            border-color: var(--action-color);
+        }
+        .toolbar-btn .icon { font-size: 1rem; }
+        .toolbar-sep {
+            width: 1px;
+            height: 20px;
+            background: var(--page-border);
+            margin: 0 2px;
+        }
+
+        /* Breadcrumb */
         .breadcrumb {
-            padding: var(--spacer);
+            padding: var(--spacerhalf) var(--spacer);
             color: var(--text-color-quiet);
             font-size: 0.9rem;
             border-bottom: 1px solid var(--page-border);
@@ -24,23 +84,78 @@
             color: var(--text-color-quiet);
         }
 
+        /* Grid view */
         .file-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-            gap: var(--spacer2);
-            padding: var(--spacer2);
-            min-height: 400px;
+            gap: var(--spacer);
+            padding: var(--spacer);
+            min-height: 300px;
+            align-content: flex-start;
+        }
+        .file-grid.empty {
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
+        /* List view */
+        .file-list-view {
+            min-height: 300px;
+        }
+        .file-list-row {
+            display: flex;
+            align-items: center;
+            gap: var(--spacer);
+            padding: var(--spacerhalf) var(--spacer);
+            border-bottom: 1px solid var(--page-border);
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .file-list-row:hover {
+            background: var(--bg-color-quiet-d);
+        }
+        .file-list-row.selected {
+            background: var(--bg-color-quiet-d);
+            border-left: 3px solid var(--action-color);
+        }
+        .file-list-row .row-icon {
+            font-size: 1.2rem;
+            width: 24px;
+            text-align: center;
+            color: var(--action-color);
+        }
+        .file-list-row .row-name {
+            flex: 1;
+            font-size: 0.9rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .file-list-row .row-size {
+            font-size: 0.8rem;
+            color: var(--text-color-quiet);
+            min-width: 60px;
+            text-align: right;
+        }
+        .file-list-row .row-date {
+            font-size: 0.8rem;
+            color: var(--text-color-quiet);
+            min-width: 100px;
+            text-align: right;
+        }
+
+        /* Grid tile */
         .file-tile {
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: var(--spacer);
+            padding: var(--spacerhalf);
             border-radius: 8px;
             cursor: pointer;
-            transition: background 0.2s ease;
+            transition: background 0.15s;
             border: 2px solid transparent;
+            position: relative;
         }
         .file-tile:hover {
             background: var(--bg-color-quiet-d);
@@ -49,60 +164,192 @@
             background: var(--bg-color-quiet-d);
             border-color: var(--action-color);
         }
+        .file-tile.optimistic {
+            opacity: 0.5;
+        }
 
         .file-tile-icon {
-            width: 64px;
-            height: 64px;
+            width: 100%;
+            aspect-ratio: 1;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 2rem;
-            margin-bottom: var(--spacerhalf);
+            font-size: 2.5rem;
+            margin-bottom: var(--spacerthird);
+            color: var(--text-color-quiet);
+            overflow: hidden;
+            border-radius: 4px;
+        }
+        .file-tile-icon.folder-icon {
+            color: var(--action-color);
+        }
+        .file-tile-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 4px;
         }
 
         .file-tile-name {
             text-align: center;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             color: var(--text-color);
             word-break: break-word;
             width: 100%;
+            line-height: 1.2;
+            max-height: 2.4em;
+            overflow: hidden;
         }
 
-        .folder-tile-icon {
-            color: var(--action-color);
+        .file-tile .tile-menu-btn {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: var(--bg-color);
+            border: 1px solid var(--page-border);
+            border-radius: 4px;
+            width: 22px;
+            height: 22px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        .file-tile:hover .tile-menu-btn {
+            display: flex;
         }
 
+        /* Context menu */
+        .context-menu {
+            position: fixed;
+            background: var(--bg-color);
+            border: 1px solid var(--page-border);
+            border-radius: 6px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+            z-index: 1000;
+            min-width: 140px;
+            padding: 4px 0;
+        }
+        .context-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-color);
+        }
+        .context-menu-item:hover {
+            background: var(--bg-color-quiet-d);
+        }
+        .context-menu-item .icon {
+            font-size: 0.9rem;
+            color: var(--text-color-quiet);
+        }
+        .context-menu-item.danger { color: #c0392b; }
+        .context-menu-item.danger .icon { color: #c0392b; }
+
+        /* Details pane */
         .sidebar-section {
             margin-bottom: var(--spacer2);
         }
-
         .sidebar-section h3 {
             font-size: 0.9rem;
             color: var(--text-color-quiet);
             margin-bottom: var(--spacer);
         }
 
-        .sidebar-buttons {
-            display: flex;
-            flex-direction: column;
-            gap: var(--spacerhalf);
-        }
-
         .detail-item {
             margin-bottom: var(--spacerhalf);
             font-size: 0.85rem;
         }
-
         .detail-label {
             color: var(--text-color-quiet);
             font-weight: 600;
         }
-
         .detail-value {
             color: var(--text-color);
             word-break: break-all;
         }
 
+        .detail-preview-container {
+            width: 100%;
+            margin-bottom: var(--spacer);
+            border-radius: 6px;
+            overflow: hidden;
+            background: var(--bg-color-quiet-d);
+            min-height: 60px;
+            position: relative;
+        }
+        .detail-preview-container img,
+        .detail-preview-container video,
+        .detail-preview-container audio {
+            width: 100%;
+            display: block;
+        }
+        .detail-preview-container iframe {
+            width: 100%;
+            height: 300px;
+            border: none;
+        }
+        .detail-preview-container pre {
+            padding: var(--spacer);
+            font-size: 0.8rem;
+            max-height: 300px;
+            overflow: auto;
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        /* Skeleton loader */
+        .skeleton-box {
+            background: linear-gradient(90deg, var(--bg-color-quiet-d) 25%, var(--bg-color-d) 50%, var(--bg-color-quiet-d) 75%);
+            background-size: 200% 100%;
+            animation: skeleton-shimmer 1.5s infinite;
+            border-radius: 4px;
+        }
+        @keyframes skeleton-shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        .skeleton-preview {
+            width: 100%;
+            height: 120px;
+        }
+
+        .detail-buttons {
+            display: flex;
+            flex-direction: row;
+            gap: var(--spacerthird);
+            margin-top: var(--spacer);
+        }
+        .detail-btn {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: 1px solid var(--page-border);
+            border-radius: 4px;
+            cursor: pointer;
+            color: var(--text-color);
+            font-size: 1rem;
+            transition: background 0.15s;
+        }
+        .detail-btn:hover {
+            background: var(--bg-color-quiet-d);
+        }
+        .detail-btn.danger {
+            color: #c0392b;
+        }
+        .detail-btn.danger:hover {
+            background: #fde8e6;
+        }
+
+        /* Drop zone */
         .drop-active {
             background: var(--bg-color-quiet-d);
             outline: 2px dashed var(--action-color);
@@ -117,40 +364,126 @@
             margin-bottom: var(--spacer);
         }
 
+        /* Folder tree */
         #folder-tree {
             max-height: 400px;
             overflow-y: auto;
             font-size: 0.85rem;
         }
-
         .tree-item {
-            padding: var(--spacerhalf) 0;
+            padding: var(--spacerthird) 0;
             cursor: pointer;
-            transition: color 0.2s;
+            transition: color 0.15s;
             user-select: none;
         }
-
         .tree-item:hover {
             color: var(--action-color);
         }
-
         .tree-item.active {
             color: var(--action-color);
             font-weight: 600;
         }
-
         .tree-folder {
             margin-left: var(--spacer);
         }
-
         .tree-folder-name {
             display: flex;
             align-items: center;
             gap: 4px;
         }
-
-        .tree-folder-icon {
+        .tree-folder-name .icon {
             font-size: 0.9rem;
+        }
+
+        /* Show more */
+        .show-more-bar {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: var(--spacer);
+        }
+        .show-more-btn {
+            background: none;
+            border: 1px solid var(--page-border);
+            border-radius: 4px;
+            padding: 6px 16px;
+            cursor: pointer;
+            color: var(--action-color);
+            font-size: 0.85rem;
+        }
+        .show-more-btn:hover {
+            background: var(--bg-color-quiet-d);
+        }
+
+        .empty-message {
+            text-align: center;
+            color: var(--text-color-quiet);
+            padding: var(--spacer2);
+        }
+
+        /* Mobile toolbar section (inside hamburger sidebar) */
+        .mobile-tools-section {
+            padding: var(--spacer);
+            border-bottom: 1px solid var(--page-border);
+        }
+        .mobile-tools-section h4 {
+            margin: 0 0 var(--spacerhalf) 0;
+            color: var(--text-color-quiet);
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .mobile-tool-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            padding: 8px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-color);
+            font-size: 0.9rem;
+            border-radius: 4px;
+        }
+        .mobile-tool-btn:hover {
+            background: var(--bg-color-quiet-d);
+        }
+        .mobile-tool-btn .icon { font-size: 1rem; color: var(--action-color); }
+        .mobile-view-row {
+            display: flex;
+            gap: var(--spacerthird);
+            margin-top: var(--spacerthird);
+        }
+        .mobile-view-row .toolbar-btn { flex: 1; justify-content: center; }
+
+        /* Mobile layout */
+        @media (max-width: 768px) {
+            .files-toolbar {
+                display: none !important;
+            }
+            .console-layout {
+                display: flex !important;
+                flex-direction: column !important;
+                height: calc(100vh - 40px);
+            }
+            .console-main {
+                flex: 1 1 50%;
+                min-height: 0;
+                overflow-y: auto;
+                padding: 0 !important;
+            }
+            .console-sidebar {
+                flex: 1 1 50%;
+                min-height: 0;
+                overflow-y: auto;
+                border-left: none !important;
+                border-top: 1px solid var(--page-border);
+            }
+            .file-grid {
+                min-height: unset;
+            }
+            .file-list-view {
+                min-height: unset;
+            }
         }
     </style>
     <script src="/script/common.js"></script>
@@ -160,12 +493,40 @@
 
     <main class="console-layout">
         <div class="console-main" id="drop-zone">
+            <div class="files-toolbar" id="files-toolbar">
+                <div class="toolbar-left">
+                    <button class="toolbar-btn" id="btn-new-folder" onclick="createFolder()">
+                        <span class="icon icon-folder"></span> New Folder
+                    </button>
+                    <button class="toolbar-btn" id="btn-upload" onclick="uploadFiles()">
+                        <span class="icon icon-upload-to-cloud"></span> Upload
+                    </button>
+                </div>
+                <div class="toolbar-right">
+                    <button class="toolbar-btn" id="btn-zoom-out" title="Zoom out" onclick="zoomGrid(-1)">
+                        <span class="icon icon-circle-with-minus"></span>
+                    </button>
+                    <button class="toolbar-btn" id="btn-zoom-in" title="Zoom in" onclick="zoomGrid(1)">
+                        <span class="icon icon-circle-with-plus"></span>
+                    </button>
+                    <div class="toolbar-sep"></div>
+                    <button class="toolbar-btn" id="btn-view-grid" title="Grid view" onclick="setViewMode('grid')">
+                        <span class="icon icon-grid"></span>
+                    </button>
+                    <button class="toolbar-btn" id="btn-view-list" title="List view" onclick="setViewMode('list')">
+                        <span class="icon icon-list"></span>
+                    </button>
+                </div>
+            </div>
+
             <div class="breadcrumb" id="breadcrumb">
                 <a href="#" onclick="navigateToFolder(''); return false;" id="domain-crumb">localhost</a>
             </div>
 
-            <div class="file-grid" id="file-grid">
-                <p style="text-align: center; color: var(--text-color-quiet); grid-column: 1 / -1;">No files or folders</p>
+            <div id="file-container">
+                <div class="file-grid" id="file-grid">
+                    <p class="empty-message">No files or folders</p>
+                </div>
             </div>
         </div>
 
@@ -177,16 +538,6 @@
                 <div id="folder-tree"></div>
             </div>
 
-            <div class="sidebar-section">
-                <h3>Actions</h3>
-                <div class="sidebar-buttons">
-                    <button class="console-btn" onclick="createFile()">📄 Create File</button>
-                    <button class="console-btn" onclick="createFolder()">📁 Create Folder</button>
-                    <button class="console-btn" onclick="uploadFiles()">⬆️ Upload Files</button>
-                </div>
-                <input type="file" id="file-input" multiple>
-            </div>
-
             <div class="sidebar-section" id="details-section" style="display: none;">
                 <h3>Details</h3>
                 <div id="file-details"></div>
@@ -194,111 +545,160 @@
         </aside>
     </main>
 
+    <input type="file" id="file-input" multiple>
+    <div class="context-menu" id="context-menu" style="display:none;"></div>
+
+    <div id="files-mobile-tools" style="display:none;">
+        <div class="mobile-tools-section">
+            <h4>File Actions</h4>
+            <button class="mobile-tool-btn" onclick="createFolder()"><span class="icon icon-folder"></span> New Folder</button>
+            <button class="mobile-tool-btn" onclick="uploadFiles()"><span class="icon icon-upload-to-cloud"></span> Upload</button>
+        </div>
+        <div class="mobile-tools-section">
+            <h4>View</h4>
+            <div class="mobile-view-row">
+                <button class="toolbar-btn" onclick="setViewMode('grid')"><span class="icon icon-grid"></span> Grid</button>
+                <button class="toolbar-btn" onclick="setViewMode('list')"><span class="icon icon-list"></span> List</button>
+            </div>
+            <div class="mobile-view-row" style="margin-top:4px;">
+                <button class="toolbar-btn" onclick="zoomGrid(-1)"><span class="icon icon-circle-with-minus"></span> Zoom -</button>
+                <button class="toolbar-btn" onclick="zoomGrid(1)"><span class="icon icon-circle-with-plus"></span> Zoom +</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
         const fileInput = document.getElementById('file-input');
-        const fileGrid = document.getElementById('file-grid');
+        const fileContainer = document.getElementById('file-container');
         const dropZone = document.getElementById('drop-zone');
         const detailsSection = document.getElementById('details-section');
         const fileDetails = document.getElementById('file-details');
         const domainCrumb = document.getElementById('domain-crumb');
         const folderTree = document.getElementById('folder-tree');
+        const contextMenuEl = document.getElementById('context-menu');
+
+        const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','webp','svg','bmp']);
 
         let currentFolder = '';
         let selectedItem = null;
-        let allFolders = new Set(); // Track all discovered folders for tree view
+        let viewMode = 'grid';
+        let gridScale = 140;
+        let allFolders = new Set();
+        let visibleCount = 30;
+        let currentItems = { files: [], folders: [] };
 
-        // Set domain name
+        // Data registry — rendered items stored here so event handlers can reference by index
+        let _registry = [];
+
         domainCrumb.textContent = window.location.hostname || 'localhost';
 
-        // Drag and drop on entire body panel
+        // --- View mode ---
+
+        window.setViewMode = function(mode) {
+            viewMode = mode;
+            updateViewToggle();
+            renderItems();
+        };
+
+        function updateViewToggle() {
+            document.getElementById('btn-view-grid').classList.toggle('active', viewMode === 'grid');
+            document.getElementById('btn-view-list').classList.toggle('active', viewMode === 'list');
+            document.getElementById('btn-zoom-out').style.display = viewMode === 'grid' ? '' : 'none';
+            document.getElementById('btn-zoom-in').style.display = viewMode === 'grid' ? '' : 'none';
+        }
+
+        window.zoomGrid = function(direction) {
+            gridScale += direction * 20;
+            if (gridScale < 60) gridScale = 60;
+            if (gridScale > 300) gridScale = 300;
+            const grid = document.getElementById('file-grid');
+            if (grid) grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${gridScale}px, 1fr))`;
+        };
+
+        dropZone.addEventListener('wheel', (e) => {
+            if (e.ctrlKey && viewMode === 'grid') {
+                e.preventDefault();
+                zoomGrid(e.deltaY > 0 ? -1 : 1);
+            }
+        }, { passive: false });
+
+        // --- Drag and drop ---
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
             dropZone.classList.add('drop-active');
         });
-
         dropZone.addEventListener('dragleave', (e) => {
-            if (e.target === dropZone) {
+            if (e.target === dropZone || !dropZone.contains(e.relatedTarget)) {
                 dropZone.classList.remove('drop-active');
             }
         });
-
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropZone.classList.remove('drop-active');
             const files = Array.from(e.dataTransfer.files);
-            if (files.length > 0) {
-                handleFileUpload(files);
-            }
+            if (files.length > 0) handleFileUpload(files);
         });
 
-        // File input change
         fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleFileUpload(Array.from(e.target.files));
-            }
+            if (e.target.files.length > 0) handleFileUpload(Array.from(e.target.files));
         });
 
-        // Upload files function (for button)
-        window.uploadFiles = function() {
-            fileInput.click();
-        };
+        // --- Actions ---
 
-        // Create file function
-        window.createFile = function() {
-            const name = prompt('Enter file name:');
-            if (!name) return;
+        window.uploadFiles = function() { fileInput.click(); };
 
-            const content = prompt('Enter file content (optional):') || '';
-            const blob = new Blob([content], { type: 'text/plain' });
-            const file = new File([blob], name, { type: 'text/plain' });
-            handleFileUpload([file]);
-        };
-
-        // Create folder function
         window.createFolder = async function() {
             const name = prompt('Enter folder name:');
             if (!name) return;
-
-            // Validate folder name
-            if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-                alert('Invalid folder name. Use only letters, numbers, hyphens, and underscores.');
+            if (!/^[a-zA-Z0-9_\- ]+$/.test(name)) {
+                alert('Invalid folder name. Use only letters, numbers, spaces, hyphens, and underscores.');
                 return;
             }
+
+            const optimisticFolder = { name, path: currentFolder ? `${currentFolder}/${name}` : name, _optimistic: true };
+            currentItems.folders.push(optimisticFolder);
+            renderItems();
 
             try {
                 const response = await fetch('/agent/epistery/files/api/folder', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        name: name,
-                        parentFolder: currentFolder
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, parentFolder: currentFolder })
                 });
-
                 if (!response.ok) {
                     const error = await response.json();
                     throw new Error(error.error || 'Failed to create folder');
                 }
-
-                const result = await response.json();
-                console.log('Folder created:', result);
-                loadFiles(currentFolder); // Reload current view
+                const idx = currentItems.folders.findIndex(f => f._optimistic && f.name === name);
+                if (idx >= 0) delete currentItems.folders[idx]._optimistic;
+                renderItems();
             } catch (error) {
-                console.error('Create folder error:', error);
+                currentItems.folders = currentItems.folders.filter(f => !(f._optimistic && f.name === name));
+                renderItems();
                 alert('Failed to create folder: ' + error.message);
             }
         };
 
-        // Navigate to folder
         window.navigateToFolder = function(folder) {
+            visibleCount = 30;
             loadFiles(folder);
         };
 
-        // Upload files
+        // --- Upload ---
+
         async function handleFileUpload(files) {
-            for (const file of files) {
+            const optimisticFiles = files.map(f => ({
+                id: '_uploading_' + Math.random().toString(36).slice(2),
+                name: f.name,
+                size: f.size,
+                mimetype: f.type,
+                _optimistic: true
+            }));
+            currentItems.files.push(...optimisticFiles);
+            renderItems();
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
                 const formData = new FormData();
                 formData.append('file', file);
                 formData.append('folder', currentFolder);
@@ -308,304 +708,517 @@
                         method: 'POST',
                         body: formData
                     });
-
                     if (!response.ok) {
                         const error = await response.json();
                         throw new Error(error.error || 'Upload failed');
                     }
+                    const result = await response.json();
+                    const idx = currentItems.files.findIndex(f => f.id === optimisticFiles[i].id);
+                    if (idx >= 0) currentItems.files[idx] = result;
                 } catch (error) {
-                    console.error('Upload error:', error);
+                    currentItems.files = currentItems.files.filter(f => f.id !== optimisticFiles[i].id);
                     alert(`Failed to upload ${file.name}: ${error.message}`);
                 }
             }
 
             fileInput.value = '';
-            loadFiles(currentFolder);
+            renderItems();
         }
 
-        // Load file list
-        async function loadFiles(folder = '') {
+        // --- Load files ---
+
+        async function loadFiles(folder) {
+            if (folder === undefined) folder = '';
             currentFolder = folder;
             selectedItem = null;
             detailsSection.style.display = 'none';
-
-            // Update breadcrumb
             updateBreadcrumb(folder);
 
             try {
                 const response = await fetch(`/agent/epistery/files/api/list?folder=${encodeURIComponent(folder)}`);
                 const data = await response.json();
-
-                if (data.files.length === 0 && data.folders.length === 0) {
-                    fileGrid.innerHTML = '<p style="text-align: center; color: var(--text-color-quiet); grid-column: 1 / -1;">No files or folders</p>';
-                    return;
-                }
-
-                let html = '';
-
-                // Show folders first
-                for (const folder of data.folders) {
-                    html += `
-                        <div class="file-tile" onclick="selectFolder('${escapeHtml(folder.name)}', '${escapeHtml(folder.path)}')">
-                            <div class="file-tile-icon folder-tile-icon">📁</div>
-                            <div class="file-tile-name">${escapeHtml(folder.name)}</div>
-                        </div>
-                    `;
-                }
-
-                // Show files
-                for (const file of data.files) {
-                    const ext = file.name.split('.').pop()?.toUpperCase().substring(0, 3) || 'FILE';
-                    html += `
-                        <div class="file-tile" onclick='selectFile(${JSON.stringify(file)})'>
-                            <div class="file-tile-icon">📄</div>
-                            <div class="file-tile-name">${escapeHtml(file.name)}</div>
-                        </div>
-                    `;
-                }
-
-                fileGrid.innerHTML = html;
-
-                // Update folder tree with discovered folders
+                currentItems = data;
                 data.folders.forEach(f => allFolders.add(f.path));
                 updateFolderTree();
+                renderItems();
             } catch (error) {
                 console.error('Failed to load files:', error);
+                fileContainer.innerHTML = '<p class="empty-message">Failed to load files</p>';
             }
         }
 
-        // Update folder tree
-        function updateFolderTree() {
-            if (!folderTree) return;
+        // --- Render items ---
 
-            // Build tree structure
-            const tree = buildFolderTree(Array.from(allFolders));
-            const domain = window.location.hostname || 'localhost';
+        function renderItems() {
+            const { files, folders } = currentItems;
+            _registry = [];
 
-            let html = `
-                <div class="tree-item ${currentFolder === '' ? 'active' : ''}" onclick="navigateToFolder(''); return false;">
-                    <div class="tree-folder-name">
-                        <span class="tree-folder-icon">📁</span>
-                        <span>${escapeHtml(domain)}</span>
-                    </div>
-                </div>
-            `;
+            if (folders.length + files.length === 0) {
+                fileContainer.innerHTML = '<div class="file-grid empty"><p class="empty-message">No files or folders</p></div>';
+                return;
+            }
 
-            html += renderTreeNode(tree, '');
-            folderTree.innerHTML = html;
+            // Build registry: folders first, then files
+            folders.forEach(f => _registry.push({ _type: 'folder', ...f }));
+            files.forEach(f => _registry.push({ _type: 'file', ...f }));
+
+            const visible = _registry.slice(0, visibleCount);
+            const hasMore = _registry.length > visibleCount;
+
+            if (viewMode === 'grid') {
+                renderGridView(visible, hasMore);
+            } else {
+                renderListView(visible, hasMore);
+            }
         }
 
-        // Build folder tree structure
-        function buildFolderTree(folders) {
-            const tree = {};
+        function renderGridView(visible, hasMore) {
+            let html = `<div class="file-grid" id="file-grid" style="grid-template-columns: repeat(auto-fill, minmax(${gridScale}px, 1fr))">`;
 
-            for (const folderPath of folders) {
-                const parts = folderPath.split('/').filter(p => p);
-                let current = tree;
-
-                for (let i = 0; i < parts.length; i++) {
-                    const part = parts[i];
-                    if (!current[part]) {
-                        current[part] = {};
-                    }
-                    current = current[part];
+            for (let i = 0; i < visible.length; i++) {
+                const item = visible[i];
+                if (item._type === 'folder') {
+                    html += renderFolderTile(item, i);
+                } else {
+                    html += renderFileTile(item, i);
                 }
             }
 
-            return tree;
+            if (hasMore) {
+                const remaining = _registry.length - visibleCount;
+                html += `<div class="show-more-bar"><button class="show-more-btn" onclick="showMore()">Show More (${remaining} remaining)</button></div>`;
+            }
+
+            html += '</div>';
+            fileContainer.innerHTML = html;
         }
 
-        // Render tree node recursively
-        function renderTreeNode(node, parentPath) {
+        function renderListView(visible, hasMore) {
+            let html = '<div class="file-list-view">';
+
+            for (let i = 0; i < visible.length; i++) {
+                const item = visible[i];
+                const isSel = selectedItem && selectedItem.id === item.id;
+
+                if (item._type === 'folder') {
+                    html += `<div class="file-list-row" data-idx="${i}" onclick="_handleClick(${i}, event)" oncontextmenu="_handleCtx(${i}, event)">
+                        <span class="row-icon icon icon-folder"></span>
+                        <span class="row-name">${esc(item.name)}</span>
+                        <span class="row-size"></span>
+                        <span class="row-date"></span>
+                    </div>`;
+                } else {
+                    html += `<div class="file-list-row${isSel ? ' selected' : ''}" data-idx="${i}" onclick="_handleClick(${i}, event)" oncontextmenu="_handleCtx(${i}, event)">
+                        <span class="row-icon icon icon-document"></span>
+                        <span class="row-name">${esc(item.name)}</span>
+                        <span class="row-size">${formatSize(item.size)}</span>
+                        <span class="row-date">${item.uploadedAt ? new Date(item.uploadedAt).toLocaleDateString() : ''}</span>
+                    </div>`;
+                }
+            }
+
+            if (hasMore) {
+                const remaining = _registry.length - visibleCount;
+                html += `<div class="show-more-bar"><button class="show-more-btn" onclick="showMore()">Show More (${remaining} remaining)</button></div>`;
+            }
+
+            html += '</div>';
+            fileContainer.innerHTML = html;
+        }
+
+        function renderFolderTile(folder, idx) {
+            const opClass = folder._optimistic ? ' optimistic' : '';
+            return `<div class="file-tile${opClass}" data-idx="${idx}" onclick="_handleClick(${idx}, event)" oncontextmenu="_handleCtx(${idx}, event)">
+                <div class="tile-menu-btn" onclick="event.stopPropagation(); _handleMenuBtn(${idx}, this)"><span class="icon icon-dots-three-horizontal"></span></div>
+                <div class="file-tile-icon folder-icon"><span class="icon icon-folder"></span></div>
+                <div class="file-tile-name">${esc(folder.name)}</div>
+            </div>`;
+        }
+
+        function renderFileTile(file, idx) {
+            const opClass = file._optimistic ? ' optimistic' : '';
+            const ext = (file.name || '').split('.').pop()?.toLowerCase();
+            const isImage = IMAGE_EXTS.has(ext);
+
+            let iconHtml;
+            if (isImage && file.id && !file._optimistic) {
+                iconHtml = `<img src="/agent/epistery/files/api/file/${file.id}/preview" loading="lazy" alt="${esc(file.name)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"><span class="icon icon-document" style="display:none; font-size:2.5rem; align-items:center; justify-content:center; width:100%; height:100%"></span>`;
+            } else {
+                iconHtml = `<span class="icon icon-document"></span>`;
+            }
+
+            return `<div class="file-tile${opClass}" data-idx="${idx}" onclick="_handleClick(${idx}, event)" oncontextmenu="_handleCtx(${idx}, event)">
+                <div class="tile-menu-btn" onclick="event.stopPropagation(); _handleMenuBtn(${idx}, this)"><span class="icon icon-dots-three-horizontal"></span></div>
+                <div class="file-tile-icon">${iconHtml}</div>
+                <div class="file-tile-name">${esc(file._optimistic ? file.name + ' (uploading...)' : file.name)}</div>
+            </div>`;
+        }
+
+        window.showMore = function() {
+            visibleCount += 30;
+            renderItems();
+        };
+
+        // --- Click / context handlers using registry ---
+
+        window._handleClick = function(idx, event) {
+            const item = _registry[idx];
+            if (!item) return;
+
+            if (item._type === 'folder') {
+                if (event.detail === 2) {
+                    navigateToFolder(item.path);
+                } else {
+                    highlightTile(event.currentTarget);
+                    selectedItem = { type: 'folder', ...item };
+                    showFolderDetails();
+                }
+            } else {
+                if (item._optimistic) return;
+                if (event.detail === 2) {
+                    downloadFile(item.id);
+                } else {
+                    highlightTile(event.currentTarget);
+                    selectedItem = { type: 'file', ...item };
+                    showFileDetails(item);
+                }
+            }
+        };
+
+        window._handleCtx = function(idx, event) {
+            event.preventDefault();
+            event.stopPropagation();
+            const item = _registry[idx];
+            if (!item) return;
+            openContextMenu(event.clientX, event.clientY, item);
+        };
+
+        window._handleMenuBtn = function(idx, btn) {
+            const item = _registry[idx];
+            if (!item) return;
+            const rect = btn.getBoundingClientRect();
+            openContextMenu(rect.left, rect.bottom + 4, item);
+        };
+
+        // --- Context menu ---
+
+        function openContextMenu(x, y, item) {
             let html = '';
-            const entries = Object.keys(node).sort();
-
-            for (const name of entries) {
-                const path = parentPath ? `${parentPath}/${name}` : name;
-                const isActive = currentFolder === path;
-
-                html += `
-                    <div class="tree-folder">
-                        <div class="tree-item ${isActive ? 'active' : ''}" onclick="navigateToFolder('${escapeHtml(path)}'); return false;">
-                            <div class="tree-folder-name">
-                                <span class="tree-folder-icon">📁</span>
-                                <span>${escapeHtml(name)}</span>
-                            </div>
-                        </div>
-                        ${renderTreeNode(node[name], path)}
-                    </div>
-                `;
+            if (item._type === 'file') {
+                html += `<div class="context-menu-item" onclick="copyFileLink('${item.id}')"><span class="icon icon-link"></span> Copy Link</div>`;
+                html += `<div class="context-menu-item" onclick="openFileLink('${item.id}')"><span class="icon icon-globe"></span> Open Link</div>`;
+                html += `<div class="context-menu-item" onclick="renameFile('${item.id}', '${esc(item.name)}')"><span class="icon icon-pencil"></span> Rename</div>`;
+                html += `<div class="context-menu-item" onclick="downloadFile('${item.id}')"><span class="icon icon-download"></span> Download</div>`;
+                html += `<div class="context-menu-item danger" onclick="deleteFile('${item.id}')"><span class="icon icon-trash"></span> Delete</div>`;
+            } else {
+                html += `<div class="context-menu-item danger" onclick="deleteFolder('${esc(item.path)}')"><span class="icon icon-trash"></span> Delete</div>`;
             }
 
-            return html;
+            contextMenuEl.innerHTML = html;
+            contextMenuEl.style.display = 'block';
+
+            const menuW = 160;
+            const menuH = contextMenuEl.offsetHeight || 80;
+            contextMenuEl.style.left = Math.min(x, window.innerWidth - menuW - 10) + 'px';
+            contextMenuEl.style.top = Math.min(y, window.innerHeight - menuH - 10) + 'px';
         }
 
-        // Update breadcrumb
-        function updateBreadcrumb(folder) {
-            const breadcrumb = document.getElementById('breadcrumb');
-            const domain = window.location.hostname || 'localhost';
+        document.addEventListener('click', () => { contextMenuEl.style.display = 'none'; });
+        document.addEventListener('contextmenu', () => { contextMenuEl.style.display = 'none'; });
 
-            let html = `<a href="#" onclick="navigateToFolder(''); return false;">${domain}</a>`;
+        // --- Selection highlight ---
 
-            if (folder) {
-                const parts = folder.split('/').filter(p => p);
-                let path = '';
-                for (const part of parts) {
-                    path += (path ? '/' : '') + part;
-                    html += `<span class="breadcrumb-separator">›</span><a href="#" onclick="navigateToFolder('${escapeHtml(path)}'); return false;">${escapeHtml(part)}</a>`;
-                }
+        function highlightTile(el) {
+            if (!el) return;
+            const parent = el.closest('.file-grid, .file-list-view');
+            if (parent) {
+                parent.querySelectorAll('.file-tile, .file-list-row').forEach(t => t.classList.remove('selected'));
             }
-
-            breadcrumb.innerHTML = html;
+            el.classList.add('selected');
         }
 
-        // Select folder
-        window.selectFolder = function(name, path) {
-            if (event && event.detail === 2) {
-                // Double click - navigate
-                loadFiles(path);
-            } else {
-                // Single click - select and show details
-                document.querySelectorAll('.file-tile').forEach(t => t.classList.remove('selected'));
-                event.currentTarget.classList.add('selected');
+        // --- Details pane ---
 
-                selectedItem = { type: 'folder', name, path };
-                showDetails();
-            }
-        };
-
-        // Select file
-        window.selectFile = function(file) {
-            if (event && event.detail === 2) {
-                // Double click - download
-                downloadFile(file.id);
-            } else {
-                // Single click - select and show details
-                document.querySelectorAll('.file-tile').forEach(t => t.classList.remove('selected'));
-                event.currentTarget.classList.add('selected');
-
-                selectedItem = { type: 'file', ...file };
-                showDetails();
-            }
-        };
-
-        // Show details in sidebar
-        function showDetails() {
+        function showFolderDetails() {
             if (!selectedItem) return;
+            detailsSection.style.display = 'block';
+            fileDetails.innerHTML = `
+                <div class="detail-item">
+                    <div class="detail-label">Type</div>
+                    <div class="detail-value">Folder</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Name</div>
+                    <div class="detail-value">${esc(selectedItem.name)}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Path</div>
+                    <div class="detail-value">${esc(selectedItem.path)}</div>
+                </div>
+                <div class="detail-buttons">
+                    <button class="detail-btn danger" title="Delete Folder" onclick="deleteFolder('${esc(selectedItem.path)}')"><span class="icon icon-trash"></span></button>
+                </div>`;
+        }
 
+        function showFileDetails(file) {
             detailsSection.style.display = 'block';
 
-            if (selectedItem.type === 'folder') {
-                fileDetails.innerHTML = `
-                    <div class="detail-item">
-                        <div class="detail-label">Type</div>
-                        <div class="detail-value">Folder</div>
+            let previewHtml = '';
+            const mime = file.mimetype || '';
+            const previewUrl = `/agent/epistery/files/api/file/${file.id}/preview`;
+
+            if (mime.startsWith('image/')) {
+                previewHtml = `<div class="detail-preview-container"><div class="skeleton-box skeleton-preview"></div><img src="${previewUrl}" loading="lazy" alt="${esc(file.name)}" onload="this.previousElementSibling.style.display='none'" onerror="this.previousElementSibling.style.display='none'"></div>`;
+            } else if (mime.startsWith('video/')) {
+                previewHtml = `<div class="detail-preview-container"><video controls src="${previewUrl}" preload="metadata" style="width:100%"></video></div>`;
+            } else if (mime.startsWith('audio/')) {
+                previewHtml = `<div class="detail-preview-container"><audio controls src="${previewUrl}" preload="metadata" style="width:100%"></audio></div>`;
+            } else if (mime === 'application/pdf') {
+                previewHtml = `<div class="detail-preview-container"><iframe src="${previewUrl}"></iframe></div>`;
+            } else if (mime.startsWith('text/') && file.size <= 1024 * 1024) {
+                previewHtml = `<div class="detail-preview-container" id="text-preview-container"><div class="skeleton-box skeleton-preview"></div></div>`;
+                setTimeout(() => loadTextPreview(previewUrl), 0);
+            }
+
+            fileDetails.innerHTML = `
+                ${previewHtml}
+                <div class="detail-item">
+                    <div class="detail-label">Name</div>
+                    <div class="detail-value">${esc(file.name)}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Size</div>
+                    <div class="detail-value">${formatSize(file.size)}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Type</div>
+                    <div class="detail-value">${esc(file.mimetype || 'unknown')}</div>
+                </div>
+                ${file.hash ? `<div class="detail-item">
+                    <div class="detail-label">Hash</div>
+                    <div class="detail-value" style="font-size: 0.75rem;">${esc(file.hash)}</div>
+                </div>` : ''}
+                ${file.uploadedBy ? `<div class="detail-item">
+                    <div class="detail-label">Uploaded By</div>
+                    <div class="detail-value" style="font-size: 0.75rem;">${esc(file.uploadedBy)}</div>
+                </div>` : ''}
+                ${file.uploadedAt ? `<div class="detail-item">
+                    <div class="detail-label">Uploaded</div>
+                    <div class="detail-value">${new Date(file.uploadedAt).toLocaleString()}</div>
+                </div>` : ''}
+                <div class="detail-item">
+                    <div class="detail-label">Direct Link</div>
+                    <div class="detail-value" style="font-size: 0.75rem;">
+                        <a href="${previewUrl}" target="_blank" style="color: var(--action-color); word-break: break-all;">${esc(location.origin + previewUrl)}</a>
                     </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Name</div>
-                        <div class="detail-value">${escapeHtml(selectedItem.name)}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Path</div>
-                        <div class="detail-value">${escapeHtml(selectedItem.path)}</div>
-                    </div>
-                    <div style="margin-top: var(--spacer); display: flex; flex-direction: column; gap: var(--spacerhalf);">
-                        <button class="console-btn small danger" onclick="deleteFolder('${escapeHtml(selectedItem.path)}')">Delete Folder</button>
-                    </div>
-                `;
-            } else {
-                fileDetails.innerHTML = `
-                    <div class="detail-item">
-                        <div class="detail-label">Type</div>
-                        <div class="detail-value">File</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Name</div>
-                        <div class="detail-value">${escapeHtml(selectedItem.name)}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Size</div>
-                        <div class="detail-value">${formatSize(selectedItem.size)}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Type</div>
-                        <div class="detail-value">${escapeHtml(selectedItem.mimetype)}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">IPFS Hash</div>
-                        <div class="detail-value" style="font-size: 0.75rem;">${escapeHtml(selectedItem.ipfsHash)}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Uploaded</div>
-                        <div class="detail-value">${new Date(selectedItem.uploadedAt).toLocaleString()}</div>
-                    </div>
-                    <div style="margin-top: var(--spacer); display: flex; flex-direction: column; gap: var(--spacerhalf);">
-                        <button class="console-btn small" onclick="downloadFile('${selectedItem.id}')">Download</button>
-                        <button class="console-btn small danger" onclick="deleteFile('${selectedItem.id}')">Delete</button>
-                    </div>
-                `;
+                </div>
+                <div class="detail-buttons">
+                    <button class="detail-btn" title="Open" onclick="openFileLink('${file.id}')"><span class="icon icon-globe"></span></button>
+                    <button class="detail-btn" title="Copy Link" onclick="copyFileLink('${file.id}')"><span class="icon icon-link"></span></button>
+                    <button class="detail-btn" title="Download" onclick="downloadFile('${file.id}')"><span class="icon icon-download"></span></button>
+                    <button class="detail-btn" title="Rename" onclick="renameFile('${file.id}', '${esc(file.name)}')"><span class="icon icon-pencil"></span></button>
+                    <button class="detail-btn danger" title="Delete" onclick="deleteFile('${file.id}')"><span class="icon icon-trash"></span></button>
+                </div>`;
+        }
+
+        async function loadTextPreview(url) {
+            const container = document.getElementById('text-preview-container');
+            if (!container) return;
+            try {
+                const response = await fetch(url);
+                const text = await response.text();
+                container.innerHTML = `<pre>${esc(text)}</pre>`;
+            } catch (e) {
+                container.innerHTML = '<p style="padding: var(--spacer)">Could not load text preview</p>';
             }
         }
 
-        function formatSize(bytes) {
-            if (bytes < 1024) return bytes + ' B';
-            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-        }
+        // --- File actions ---
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+        window.openFileLink = function(id) {
+            contextMenuEl.style.display = 'none';
+            window.open(`/agent/epistery/files/api/file/${id}/preview`, '_blank');
+        };
+
+        window.copyFileLink = function(id) {
+            contextMenuEl.style.display = 'none';
+            const url = location.origin + `/agent/epistery/files/api/file/${id}/preview`;
+            navigator.clipboard.writeText(url).then(() => {
+                // Brief visual feedback
+                const btn = event?.target?.closest('.console-btn, .context-menu-item');
+                if (btn) {
+                    const orig = btn.textContent;
+                    btn.textContent = 'Copied!';
+                    setTimeout(() => { btn.textContent = orig; }, 1500);
+                }
+            });
+        };
 
         window.downloadFile = function(id) {
+            contextMenuEl.style.display = 'none';
             window.location.href = `/agent/epistery/files/api/file/${id}/download`;
         };
 
-        window.deleteFile = async function(id) {
-            if (!confirm('Delete this file?')) return;
+        window.renameFile = async function(id, currentName) {
+            contextMenuEl.style.display = 'none';
+            const newName = prompt('Rename file:', currentName);
+            if (!newName || !newName.trim() || newName === currentName) return;
 
             try {
                 const response = await fetch(`/agent/epistery/files/api/file/${id}`, {
-                    method: 'DELETE'
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ newName: newName.trim() })
                 });
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Rename failed');
+                }
+                loadFiles(currentFolder);
+            } catch (error) {
+                alert('Rename failed: ' + error.message);
+            }
+        };
 
+        window.deleteFile = async function(id) {
+            contextMenuEl.style.display = 'none';
+            if (!confirm('Delete this file?')) return;
+
+            try {
+                const response = await fetch(`/agent/epistery/files/api/file/${id}`, { method: 'DELETE' });
                 if (!response.ok) {
                     const error = await response.json();
                     throw new Error(error.error || 'Delete failed');
                 }
-
                 loadFiles(currentFolder);
             } catch (error) {
-                console.error('Delete error:', error);
                 alert('Failed to delete file: ' + error.message);
             }
         };
 
         window.deleteFolder = async function(path) {
+            contextMenuEl.style.display = 'none';
             if (!confirm(`Delete folder "${path}"? This will fail if the folder is not empty.`)) return;
 
             try {
-                const response = await fetch(`/agent/epistery/files/api/folder?path=${encodeURIComponent(path)}`, {
-                    method: 'DELETE'
-                });
-
+                const response = await fetch(`/agent/epistery/files/api/folder?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
                 if (!response.ok) {
                     const error = await response.json();
                     throw new Error(error.error || 'Delete failed');
                 }
-
-                // Navigate to parent folder
                 const parentPath = path.split('/').slice(0, -1).join('/');
                 loadFiles(parentPath);
             } catch (error) {
-                console.error('Delete folder error:', error);
                 alert('Failed to delete folder: ' + error.message);
             }
         };
 
-        // Load files on page load
+        // --- Breadcrumb ---
+
+        function updateBreadcrumb(folder) {
+            const breadcrumb = document.getElementById('breadcrumb');
+            const domain = window.location.hostname || 'localhost';
+            let html = `<a href="#" onclick="navigateToFolder(''); return false;">${domain}</a>`;
+            if (folder) {
+                const parts = folder.split('/').filter(p => p);
+                let path = '';
+                for (const part of parts) {
+                    path += (path ? '/' : '') + part;
+                    html += `<span class="breadcrumb-separator">/</span><a href="#" onclick="navigateToFolder('${esc(path)}'); return false;">${esc(part)}</a>`;
+                }
+            }
+            breadcrumb.innerHTML = html;
+        }
+
+        // --- Folder tree ---
+
+        function updateFolderTree() {
+            if (!folderTree) return;
+            const tree = buildFolderTree(Array.from(allFolders));
+            const domain = window.location.hostname || 'localhost';
+            let html = `<div class="tree-item ${currentFolder === '' ? 'active' : ''}" onclick="navigateToFolder(''); return false;">
+                <div class="tree-folder-name">
+                    <span class="icon icon-folder"></span>
+                    <span>${esc(domain)}</span>
+                </div>
+            </div>`;
+            html += renderTreeNode(tree, '');
+            folderTree.innerHTML = html;
+        }
+
+        function buildFolderTree(folders) {
+            const tree = {};
+            for (const folderPath of folders) {
+                const parts = folderPath.split('/').filter(p => p);
+                let current = tree;
+                for (const part of parts) {
+                    if (!current[part]) current[part] = {};
+                    current = current[part];
+                }
+            }
+            return tree;
+        }
+
+        function renderTreeNode(node, parentPath) {
+            let html = '';
+            for (const name of Object.keys(node).sort()) {
+                const path = parentPath ? `${parentPath}/${name}` : name;
+                const isActive = currentFolder === path;
+                html += `<div class="tree-folder">
+                    <div class="tree-item ${isActive ? 'active' : ''}" onclick="navigateToFolder('${esc(path)}'); return false;">
+                        <div class="tree-folder-name">
+                            <span class="icon icon-folder"></span>
+                            <span>${esc(name)}</span>
+                        </div>
+                    </div>
+                    ${renderTreeNode(node[name], path)}
+                </div>`;
+            }
+            return html;
+        }
+
+        // --- Helpers ---
+
+        function formatSize(bytes) {
+            if (!bytes && bytes !== 0) return '';
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function esc(text) {
+            if (text == null) return '';
+            const div = document.createElement('div');
+            div.textContent = String(text);
+            return div.innerHTML;
+        }
+
+        // --- Mobile toolbar ---
+
+        function moveToolbar() {
+            const mobileTools = document.getElementById('files-mobile-tools');
+            const mobileSlot = document.getElementById('header-sidebar-content');
+            if (!mobileTools || !mobileSlot) return;
+
+            const isMobile = window.matchMedia('(max-width: 768px)').matches;
+            const isInSlot = mobileSlot.contains(mobileTools);
+
+            if (isMobile && !isInSlot) {
+                mobileTools.style.display = 'block';
+                mobileSlot.appendChild(mobileTools);
+            } else if (!isMobile && isInSlot) {
+                mobileTools.style.display = 'none';
+                document.body.appendChild(mobileTools);
+            }
+        }
+
+        document.addEventListener('header-ready', () => {
+            moveToolbar();
+            window.matchMedia('(max-width: 768px)').addEventListener('change', moveToolbar);
+        }, { once: true });
+
+        // Initialize
+        updateViewToggle();
         loadFiles();
     </script>
 </body>
