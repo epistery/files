@@ -9,6 +9,7 @@
  */
 import express from 'express';
 import fileUpload from 'express-fileupload';
+import sharp from 'sharp';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, unlinkSync } from 'fs';
@@ -23,6 +24,9 @@ export default class FilesAgent {
         this.config = config;
         this.epistery = null;
         this.storageBackends = new Map();
+        // In-memory variant cache: key = "fileId:w:h:fit", value = { buffer, mimetype }
+        this._variantCache = new Map();
+        this._variantCacheMax = 50;
     }
 
     /**
@@ -478,7 +482,8 @@ export default class FilesAgent {
             }
         });
 
-        // File preview (inline display)
+        // File preview (inline display) with optional image variant resizing
+        // Query params: ?w=800 ?h=600 ?fit=cover|contain|inside
         apiRouter.get('/file/:id/preview', async (req, res) => {
             try {
                 const { id } = req.params;
@@ -487,6 +492,23 @@ export default class FilesAgent {
 
                 if (!metadata) {
                     return res.status(404).end();
+                }
+
+                const wantResize = req.query.w || req.query.h;
+                const isImage = metadata.mimetype && metadata.mimetype.startsWith('image/');
+                const isSvg = metadata.mimetype === 'image/svg+xml';
+
+                // Check variant cache first
+                let cacheKey = null;
+                if (wantResize && isImage && !isSvg) {
+                    cacheKey = `${domain}:${id}:${req.query.w||''}:${req.query.h||''}:${req.query.fit||''}`;
+                    const cached = this._variantCache.get(cacheKey);
+                    if (cached) {
+                        res.setHeader('Content-Type', cached.mimetype);
+                        res.setHeader('Content-Length', cached.buffer.length);
+                        res.setHeader('Cache-Control', 'public, max-age=86400');
+                        return res.send(cached.buffer);
+                    }
                 }
 
                 // Read through EncryptedStorage — it handles both:
@@ -503,6 +525,36 @@ export default class FilesAgent {
                 // Ensure Buffer for correct binary transport
                 if (typeof fileData === 'string') {
                     fileData = Buffer.from(fileData, 'binary');
+                }
+
+                // Resize if requested, image type, and not SVG
+                if (wantResize && isImage && !isSvg) {
+                    try {
+                        const maxDim = 2400;
+                        let w = req.query.w ? Math.min(parseInt(req.query.w, 10), maxDim) : null;
+                        let h = req.query.h ? Math.min(parseInt(req.query.h, 10), maxDim) : null;
+                        const fit = ['cover','contain','inside'].includes(req.query.fit) ? req.query.fit : 'inside';
+
+                        if (w || h) {
+                            const resized = await sharp(fileData)
+                                .resize(w || null, h || null, { fit, withoutEnlargement: true })
+                                .toBuffer();
+
+                            // Cache the variant (FIFO eviction)
+                            if (this._variantCache.size >= this._variantCacheMax) {
+                                const oldest = this._variantCache.keys().next().value;
+                                this._variantCache.delete(oldest);
+                            }
+                            this._variantCache.set(cacheKey, { buffer: resized, mimetype: metadata.mimetype });
+
+                            res.setHeader('Content-Type', metadata.mimetype);
+                            res.setHeader('Content-Length', resized.length);
+                            res.setHeader('Cache-Control', 'public, max-age=86400');
+                            return res.send(resized);
+                        }
+                    } catch (e) {
+                        console.warn('[Files] Sharp resize failed, serving original:', e.message);
+                    }
                 }
 
                 res.setHeader('Content-Type', metadata.mimetype);
