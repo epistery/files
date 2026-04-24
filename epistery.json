@@ -7,10 +7,6 @@
   "main": "index.mjs",
   "icon": "/agent/epistery/files/icon.svg",
   "widget": "/agent/epistery/files/widget",
-  "permissions": [
-    "whitelist:read",
-    "ipfs:write"
-  ],
   "config": {
     "uploadList": "files::upload",
     "manageList": "files::manage",
