@@ -17,7 +17,9 @@ File management for Epistery with Storj storage and data wallet origin tracking.
 
 - Uses Epistery authentication and DomainACL for access control
 - Storj storage via StorageFactory (raw writes for binary, encrypted for metadata)
-- File index and per-file metadata stored locally in domain config (`~/.epistery/{domain}/`)
+- Remote `._i` records are the sole source of truth — no local per-file JSON
+- In-memory cache (`_domainCache`) with `files-cache.json` for fast cold start
+- On startup, loads cache file first, then reconciles with a full storage scan
 - Single-file HTML UI following epistery convention (`public/index.html`)
 
 ## Configuration
@@ -62,3 +64,7 @@ Storj credentials are configured in the admin panel under Storj Storage, or in t
 ## Storage Notes
 
 Binary file content is written through raw storage (bypassing EncryptedStorage) to avoid text encoding corruption. Metadata files (`._i` wallet data, `.folder` placeholders) use the encrypted storage path since they are JSON text.
+
+### Data Flow (v0.3.0)
+
+The `._i` record in Storj is the single source of truth for every file. Local state is limited to `files-cache.json` — a serialized snapshot of the in-memory cache for fast cold starts. On server restart the cache is loaded from disk, then a full `listAllFiles()` scan reconciles against remote storage. Mutations (upload, rename, delete) update the `._i` record in Storj first, then the in-memory cache, then persist the cache file.
