@@ -2,17 +2,17 @@
  * Files Agent - IPFS file management with data wallet origin tracking
  *
  * Provides Dropbox-like functionality where:
- * - Files are stored in IPFS
- * - Each file gets a data wallet to prove origin and track changes
+ * - Files are stored in Storj (S3-compatible)
+ * - Each file gets a ._i data wallet record to prove origin and track changes
+ * - ._i records in remote storage are the sole source of truth
+ * - In-memory cache with files-cache.json for fast cold start
  * - Access control through Epistery white-lists
- * - Bypasses all middlemen - users control their data
  */
 import express from 'express';
 import fileUpload from 'express-fileupload';
 import sharp from 'sharp';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, unlinkSync } from 'fs';
 import crypto from 'crypto';
 import { Config } from 'epistery';
 
@@ -27,85 +27,141 @@ export default class FilesAgent {
         // In-memory variant cache: key = "fileId:w:h:fit", value = { buffer, mimetype }
         this._variantCache = new Map();
         this._variantCacheMax = 50;
+        // Domain metadata cache: key = domain, value = { files: Map<id, meta>, loaded, loading }
+        this._domainCache = new Map();
     }
 
+    // --- Cache infrastructure ---
+
     /**
-     * Read JSON file from domain config directory
+     * Get cache for a domain, triggering load if not yet loaded.
+     * Uses a loading promise guard to deduplicate concurrent calls.
      */
-    readJson(domain, filename) {
-        const config = new Config();
-        config.setPath(domain);
-        try {
-            const data = config.readFile(filename);
-            return JSON.parse(data.toString());
-        } catch (error) {
-            if (error.code === 'ENOENT') return null;
-            throw error;
+    async getCache(domain) {
+        let cache = this._domainCache.get(domain);
+        if (!cache) {
+            cache = { files: new Map(), loaded: false, loading: null };
+            this._domainCache.set(domain, cache);
         }
+        if (!cache.loaded && !cache.loading) {
+            cache.loading = this._loadFromStorage(domain, cache)
+                .then(() => { cache.loaded = true; cache.loading = null; })
+                .catch(err => {
+                    console.error('[Files] Cache load failed:', err.message);
+                    cache.loading = null;
+                });
+        }
+        if (cache.loading) await cache.loading;
+        return cache;
     }
 
     /**
-     * Write JSON file to domain config directory
+     * Load metadata from storage ._i records into cache.
+     * On cold start, loads from files-cache.json first, then reconciles with storage scan.
      */
-    writeJson(domain, filename, data) {
-        const config = new Config();
-        config.setPath(domain);
-        config.save();
-        config.writeFile(filename, JSON.stringify(data, null, 2));
-    }
-
-    /**
-     * Delete JSON file from domain config directory
-     */
-    deleteJson(domain, filename) {
-        const config = new Config();
-        config.setPath(domain);
+    async _loadFromStorage(domain, cache) {
+        // Try fast warm start from cache file
         try {
-            const filepath = join(config.currentDir, filename);
-            if (existsSync(filepath)) {
-                unlinkSync(filepath);
-                return true;
+            const cfg = new Config();
+            cfg.setPath(domain);
+            const data = cfg.readFile('files-cache.json');
+            const entries = JSON.parse(data.toString());
+            for (const entry of entries) {
+                cache.files.set(entry.id, entry);
             }
-        } catch (error) {
-            if (error.code !== 'ENOENT') throw error;
+            console.log(`[Files] Warm start: ${entries.length} files from cache for ${domain}`);
+        } catch (e) {
+            // No cache file yet — that's fine
         }
-        return false;
+
+        // Full storage scan to reconcile
+        try {
+            const storage = await this.getStorage(domain);
+            const allKeys = await storage.listAllFiles('');
+            const metaKeys = allKeys.filter(k => k.endsWith('._i'));
+
+            if (metaKeys.length === 0 && cache.files.size > 0) {
+                // Storage listing returned empty but we have cache — keep cache
+                console.log(`[Files] Storage scan empty, keeping ${cache.files.size} cached entries`);
+                return;
+            }
+
+            // Read ._i records in batches of 20
+            const scanned = new Map();
+            for (let i = 0; i < metaKeys.length; i += 20) {
+                const batch = metaKeys.slice(i, i + 20);
+                const results = await Promise.allSettled(
+                    batch.map(async key => {
+                        const raw = await storage.readFile(key);
+                        const record = JSON.parse(raw.toString());
+                        return { key, record };
+                    })
+                );
+                for (const result of results) {
+                    if (result.status === 'fulfilled') {
+                        const { key, record } = result.value;
+                        const meta = this._recordToMeta(key, record);
+                        scanned.set(meta.id, meta);
+                    }
+                }
+            }
+
+            // Replace cache with scanned data
+            cache.files = scanned;
+            console.log(`[Files] Storage scan: ${scanned.size} files for ${domain}`);
+
+            // Persist for next cold start
+            this._persistCache(domain, cache);
+        } catch (err) {
+            console.warn('[Files] Storage scan failed, using warm cache:', err.message);
+        }
     }
 
     /**
-     * Get file index (tracks all files and folders)
+     * Translate a ._i record + its key path into the metadata shape.
+     * Key format: "folder/fileId._i" or "fileId._i"
      */
-    getFileIndex(domain) {
-        return this.readJson(domain, 'files-index.json') || { files: {}, folders: [] };
+    _recordToMeta(metaKey, record) {
+        // Strip ._i suffix to get keyBase
+        const keyBase = metaKey.slice(0, -3);
+        // id is the last segment of keyBase
+        const segments = keyBase.split('/');
+        const id = segments[segments.length - 1];
+        // folder is everything before the last segment
+        const folder = record.folder !== undefined ? record.folder : (segments.length > 1 ? segments.slice(0, -1).join('/') : '');
+        // file extension from record or originalFileKey
+        const ext = record._ext || (record.originalFileKey ? record.originalFileKey.split('.').pop() : 'bin');
+
+        return {
+            id,
+            name: record.name || `${id}.${ext}`,
+            size: record.size || 0,
+            mimetype: record.type || 'application/octet-stream',
+            keyBase,
+            fileKey: record.originalFileKey || `${keyBase}.${ext}`,
+            folder,
+            uploadedBy: record._createdBy || '',
+            uploadedAt: record._created || '',
+            hash: record._hash || ''
+        };
     }
 
     /**
-     * Save file index
+     * Persist cache to files-cache.json for fast cold start.
      */
-    saveFileIndex(domain, index) {
-        this.writeJson(domain, 'files-index.json', index);
+    _persistCache(domain, cache) {
+        try {
+            const cfg = new Config();
+            cfg.setPath(domain);
+            cfg.save();
+            const entries = [...cache.files.values()];
+            cfg.writeFile('files-cache.json', JSON.stringify(entries, null, 2));
+        } catch (e) {
+            console.warn('[Files] Failed to persist cache:', e.message);
+        }
     }
 
-    /**
-     * Get file metadata by ID
-     */
-    getFile(domain, fileId) {
-        return this.readJson(domain, `files-${fileId}.json`);
-    }
-
-    /**
-     * Save file metadata
-     */
-    saveFile(domain, metadata) {
-        this.writeJson(domain, `files-${metadata.id}.json`, metadata);
-    }
-
-    /**
-     * Delete file metadata
-     */
-    deleteFile(domain, fileId) {
-        return this.deleteJson(domain, `files-${fileId}.json`);
-    }
+    // --- Storage helpers ---
 
     /**
      * Get or initialize storage for a domain (encrypted, for text/metadata)
@@ -199,13 +255,12 @@ export default class FilesAgent {
         // Status endpoint
         router.get('/status', async (req, res) => {
             try {
-                const index = this.getFileIndex(req.domain);
+                const cache = await this.getCache(req.domain);
                 const storage = await this.getStorage(req.domain);
                 res.json({
                     agent: 'files',
-                    version: '0.2.0',
-                    fileCount: Object.keys(index.files).length,
-                    folderCount: index.folders.length,
+                    version: '0.3.0',
+                    fileCount: cache.files.size,
                     storage: storage.constructor.name
                 });
             } catch (error) {
@@ -286,10 +341,10 @@ export default class FilesAgent {
                 }
 
                 const domain = req.hostname || 'localhost';
-                const index = this.getFileIndex(domain);
+                const cache = await this.getCache(domain);
 
                 // Find all files in this folder and subfolders
-                const filesToDelete = Object.values(index.files)
+                const filesToDelete = [...cache.files.values()]
                     .filter(f => f.folder === folderPath || f.folder.startsWith(folderPath + '/'));
 
                 if (filesToDelete.length > 0) {
@@ -315,17 +370,15 @@ export default class FilesAgent {
             try {
                 const domain = req.hostname || 'localhost';
                 const folder = req.query.folder || '';
-                const index = this.getFileIndex(domain);
+                const cache = await this.getCache(domain);
 
                 // Filter files by folder
-                const files = Object.values(index.files)
-                    .filter(f => f.folder === folder)
-                    .map(f => this.getFile(domain, f.id))
-                    .filter(Boolean);
+                const files = [...cache.files.values()]
+                    .filter(f => f.folder === folder);
 
-                // Get unique subfolders from index
+                // Get unique subfolders from cached file paths
                 const folderSet = new Set(
-                    Object.values(index.files)
+                    [...cache.files.values()]
                         .filter(f => f.folder.startsWith(folder) && f.folder !== folder)
                         .map(f => {
                             const relativePath = folder ? f.folder.slice(folder.length + 1) : f.folder;
@@ -435,7 +488,7 @@ export default class FilesAgent {
                     });
                 }
 
-                // Create file metadata for index
+                // Build metadata entry for cache
                 const metadata = {
                     id: fileId,
                     name: file.name,
@@ -449,13 +502,10 @@ export default class FilesAgent {
                     hash: crypto.createHash('md5').update(fileData).digest('hex')
                 };
 
-                // Save file metadata
-                this.saveFile(domain, metadata);
-
-                // Update index
-                const index = this.getFileIndex(domain);
-                index.files[fileId] = { id: fileId, folder: folder };
-                this.saveFileIndex(domain, index);
+                // Update cache
+                const cache = await this.getCache(domain);
+                cache.files.set(fileId, metadata);
+                this._persistCache(domain, cache);
 
                 res.json(metadata);
             } catch (error) {
@@ -469,7 +519,8 @@ export default class FilesAgent {
             try {
                 const { id } = req.params;
                 const domain = req.hostname || 'localhost';
-                const metadata = this.getFile(domain, id);
+                const cache = await this.getCache(domain);
+                const metadata = cache.files.get(id);
 
                 if (!metadata) {
                     return res.status(404).json({ error: 'File not found' });
@@ -488,7 +539,8 @@ export default class FilesAgent {
             try {
                 const { id } = req.params;
                 const domain = req.hostname || 'localhost';
-                const metadata = this.getFile(domain, id);
+                const cache = await this.getCache(domain);
+                const metadata = cache.files.get(id);
 
                 if (!metadata) {
                     return res.status(404).end();
@@ -573,7 +625,8 @@ export default class FilesAgent {
             try {
                 const { id } = req.params;
                 const domain = req.hostname || 'localhost';
-                const metadata = this.getFile(domain, id);
+                const cache = await this.getCache(domain);
+                const metadata = cache.files.get(id);
 
                 if (!metadata) {
                     return res.status(404).json({ error: 'File not found' });
@@ -612,7 +665,8 @@ export default class FilesAgent {
                     return res.status(400).json({ error: 'newName is required' });
                 }
 
-                const metadata = this.getFile(domain, id);
+                const cache = await this.getCache(domain);
+                const metadata = cache.files.get(id);
                 if (!metadata) {
                     return res.status(404).json({ error: 'File not found' });
                 }
@@ -642,12 +696,7 @@ export default class FilesAgent {
                     }
                 }
 
-                // Update metadata
-                metadata.name = newName.trim();
-                metadata.fileKey = newFileKey;
-                this.saveFile(domain, metadata);
-
-                // Update storage metadata file
+                // Update ._i record in storage
                 if (metadata.keyBase) {
                     const metaKey = `${metadata.keyBase}._i`;
                     try {
@@ -663,6 +712,12 @@ export default class FilesAgent {
                         console.warn('[Files] Storage meta update error:', error.message);
                     }
                 }
+
+                // Update cache entry
+                metadata.name = newName.trim();
+                metadata.fileKey = newFileKey;
+                cache.files.set(id, metadata);
+                this._persistCache(domain, cache);
 
                 res.json({ success: true, file: metadata });
             } catch (error) {
@@ -681,7 +736,8 @@ export default class FilesAgent {
                     return res.status(401).json({ error: 'Not authenticated' });
                 }
 
-                const metadata = this.getFile(domain, id);
+                const cache = await this.getCache(domain);
+                const metadata = cache.files.get(id);
                 if (!metadata) {
                     return res.status(404).json({ error: 'File not found' });
                 }
@@ -708,13 +764,9 @@ export default class FilesAgent {
                     }
                 }
 
-                // Delete local metadata
-                this.deleteFile(domain, id);
-
-                // Update index
-                const index = this.getFileIndex(domain);
-                delete index.files[id];
-                this.saveFileIndex(domain, index);
+                // Remove from cache
+                cache.files.delete(id);
+                this._persistCache(domain, cache);
 
                 res.json({ success: true });
             } catch (error) {
