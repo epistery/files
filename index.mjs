@@ -195,7 +195,7 @@ export default class FilesAgent {
         }
 
         try {
-            const access = await req.domainAcl.checkAgentAccess('@epistery/files', req.episteryClient.address, req.hostname);
+            const access = await req.domainAcl.checkAgentAccess('epistery/files', req.episteryClient.address, req.hostname);
             result.admin = access.level >= 3;
             result.edit = access.level >= 2;  // editors and admins can upload/manage
             result.read = access.level >= 1;  // readers and above can view
