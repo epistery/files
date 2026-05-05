@@ -1,7 +1,7 @@
 {
   "name": "@epistery/files",
   "title": "Files",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "File management with Storj storage and data wallet origin tracking",
   "author": "Epistery",
   "main": "index.mjs",
@@ -38,6 +38,39 @@
           "id": { "type": "string", "description": "File ID (hex string)" }
         },
         "required": ["id"]
+      }
+    },
+    {
+      "name": "files_read",
+      "scope": "files:read",
+      "description": "Read file contents by ID. Returns { encoding, content } where content is utf-8 text for text/json/xml mimetypes and base64 otherwise. Capped at 25 MB; use files_download for larger files.",
+      "method": "GET",
+      "path": "/api/file/{id}/content",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "File ID (hex string)" },
+          "encoding": { "type": "string", "description": "Force return encoding. Auto-selected if omitted.", "enum": ["text", "base64"] }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "files_write",
+      "scope": "files:write",
+      "description": "Create a new file from inline content. Requires editor access.",
+      "method": "POST",
+      "path": "/api/file",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "File name including extension" },
+          "folder": { "type": "string", "description": "Target folder path. Empty string or omitted for root." },
+          "content": { "type": "string", "description": "File content (utf-8 text, or base64-encoded bytes when encoding=base64)" },
+          "mimetype": { "type": "string", "description": "MIME type. Defaults to text/plain or application/octet-stream based on encoding." },
+          "encoding": { "type": "string", "description": "Content encoding. Defaults to text.", "enum": ["text", "base64"] }
+        },
+        "required": ["name", "content"]
       }
     },
     {

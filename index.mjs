@@ -184,6 +184,59 @@ export default class FilesAgent {
     }
 
     /**
+     * Write a file's bytes + ._i metadata, update cache, return metadata.
+     * Shared by multipart /api/upload and JSON POST /api/file.
+     */
+    async _persistFile(domain, { name, mimetype, folder, data, address }) {
+        const fileId = crypto.randomBytes(16).toString('hex');
+        const keyBase = folder ? `${folder}/${fileId}` : fileId;
+        const ext = name.split('.').pop() || 'bin';
+        const fileKey = `${keyBase}.${ext}`;
+        const metaKey = `${keyBase}._i`;
+
+        const rawStorage = await this.getRawStorage(domain);
+        const storage = await this.getStorage(domain);
+
+        await rawStorage.writeFile(fileKey, data);
+
+        const now = new Date().toISOString();
+        const hash = crypto.createHash('md5').update(data).digest('hex');
+        const dataWallet = {
+            _created: now,
+            _createdBy: address,
+            _modified: now,
+            _modifiedBy: address,
+            _hash: hash,
+            _ext: ext,
+            name,
+            type: mimetype,
+            size: data.length,
+            originalFileKey: fileKey,
+            folder: folder || ''
+        };
+        await storage.writeFile(metaKey, JSON.stringify(dataWallet, null, 2));
+
+        const metadata = {
+            id: fileId,
+            name,
+            size: data.length,
+            mimetype,
+            keyBase,
+            fileKey,
+            folder: folder || '',
+            uploadedBy: address,
+            uploadedAt: now,
+            hash
+        };
+
+        const cache = await this.getCache(domain);
+        cache.files.set(fileId, metadata);
+        this._persistCache(domain, cache);
+
+        return metadata;
+    }
+
+    /**
      * Get permissions using DomainACL
      */
     async getPermissions(req) {
@@ -447,39 +500,15 @@ export default class FilesAgent {
                     fileData = file.data;
                 }
 
-                // Generate file ID and keys
-                const fileId = crypto.randomBytes(16).toString('hex');
-                const keyBase = folder ? `${folder}/${fileId}` : fileId;
-                const ext = file.name.split('.').pop() || 'bin';
-                const fileKey = `${keyBase}.${ext}`;
-                const metaKey = `${keyBase}._i`;
-
-                // Upload to storage: raw backend for binary content, encrypted for metadata
-                const rawStorage = await this.getRawStorage(domain);
-                const storage = await this.getStorage(domain);
-
                 try {
-                    // Save raw file (binary data bypasses encryption)
-                    await rawStorage.writeFile(fileKey, fileData);
-
-                    // Create data wallet metadata
-                    const now = new Date().toISOString();
-                    const dataWallet = {
-                        _created: now,
-                        _createdBy: req.episteryClient.address,
-                        _modified: now,
-                        _modifiedBy: req.episteryClient.address,
-                        _hash: crypto.createHash('md5').update(fileData).digest('hex'),
-                        _ext: ext,
+                    const metadata = await this._persistFile(domain, {
                         name: file.name,
-                        type: file.mimetype,
-                        size: file.size,
-                        originalFileKey: fileKey,
-                        folder: folder
-                    };
-
-                    // Save metadata
-                    await storage.writeFile(metaKey, JSON.stringify(dataWallet, null, 2));
+                        mimetype: file.mimetype,
+                        folder,
+                        data: fileData,
+                        address: req.episteryClient.address
+                    });
+                    res.json(metadata);
                 } catch (error) {
                     console.error(`[Files] Storage upload failed:`, error);
                     return res.status(500).json({
@@ -487,27 +516,6 @@ export default class FilesAgent {
                         details: error.message
                     });
                 }
-
-                // Build metadata entry for cache
-                const metadata = {
-                    id: fileId,
-                    name: file.name,
-                    size: file.size,
-                    mimetype: file.mimetype,
-                    keyBase: keyBase,
-                    fileKey: fileKey,
-                    folder: folder,
-                    uploadedBy: req.episteryClient.address,
-                    uploadedAt: new Date().toISOString(),
-                    hash: crypto.createHash('md5').update(fileData).digest('hex')
-                };
-
-                // Update cache
-                const cache = await this.getCache(domain);
-                cache.files.set(fileId, metadata);
-                this._persistCache(domain, cache);
-
-                res.json(metadata);
             } catch (error) {
                 console.error('[Files] Upload error:', error);
                 res.status(500).json({ error: error.message });
@@ -529,6 +537,96 @@ export default class FilesAgent {
                 res.json(metadata);
             } catch (error) {
                 console.error('[Files] Meta error:', error);
+                res.status(500).json({ error: error.message });
+            }
+        });
+
+        // JSON file read for MCP clients. Returns text or base64 content inline.
+        const READ_MAX_BYTES = 25 * 1024 * 1024;
+        apiRouter.get('/file/:id/content', async (req, res) => {
+            try {
+                const { id } = req.params;
+                const domain = req.hostname || 'localhost';
+                const cache = await this.getCache(domain);
+                const metadata = cache.files.get(id);
+
+                if (!metadata) {
+                    return res.status(404).json({ error: 'File not found' });
+                }
+                if (metadata.size > READ_MAX_BYTES) {
+                    return res.status(413).json({
+                        error: 'File too large for inline read. Use /api/file/:id/download.',
+                        size: metadata.size,
+                        limit: READ_MAX_BYTES
+                    });
+                }
+
+                const storage = await this.getStorage(domain);
+                const fileKey = metadata.fileKey || metadata.storageKey;
+                let fileData;
+                try {
+                    fileData = await storage.readFile(fileKey);
+                } catch (e) {
+                    return res.status(404).json({ error: 'File content not found' });
+                }
+                if (typeof fileData === 'string') fileData = Buffer.from(fileData, 'binary');
+
+                const mt = metadata.mimetype || 'application/octet-stream';
+                const isTextual = mt.startsWith('text/') || mt === 'application/json' || mt === 'application/xml';
+                const requested = req.query.encoding;
+                const encoding = requested === 'base64' ? 'base64'
+                               : requested === 'text' ? 'text'
+                               : (isTextual ? 'text' : 'base64');
+                const content = encoding === 'text' ? fileData.toString('utf8') : fileData.toString('base64');
+
+                res.json({
+                    id: metadata.id,
+                    name: metadata.name,
+                    mimetype: mt,
+                    size: metadata.size,
+                    encoding,
+                    content
+                });
+            } catch (error) {
+                console.error('[Files] Read error:', error);
+                res.status(500).json({ error: error.message });
+            }
+        });
+
+        // JSON file write for MCP clients. Sibling to multipart /api/upload.
+        apiRouter.post('/file', express.json({ limit: '40mb' }), async (req, res) => {
+            try {
+                if (!req.episteryClient) {
+                    return res.status(401).json({ error: 'Not authenticated' });
+                }
+                const permissions = await this.getPermissions(req);
+                if (!permissions.edit) {
+                    return res.status(403).json({ error: 'Not authorized to write. Editor access required.' });
+                }
+
+                const { name, folder = '', content, mimetype, encoding } = req.body || {};
+                if (!name || typeof name !== 'string') {
+                    return res.status(400).json({ error: 'name is required' });
+                }
+                if (typeof content !== 'string') {
+                    return res.status(400).json({ error: 'content is required (string)' });
+                }
+
+                const enc = encoding === 'base64' ? 'base64' : 'text';
+                const data = enc === 'base64' ? Buffer.from(content, 'base64') : Buffer.from(content, 'utf8');
+                const mt = mimetype || (enc === 'text' ? 'text/plain' : 'application/octet-stream');
+                const domain = req.hostname || 'localhost';
+
+                const metadata = await this._persistFile(domain, {
+                    name,
+                    mimetype: mt,
+                    folder,
+                    data,
+                    address: req.episteryClient.address
+                });
+                res.json(metadata);
+            } catch (error) {
+                console.error('[Files] Write error:', error);
                 res.status(500).json({ error: error.message });
             }
         });
