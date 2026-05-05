@@ -1,5 +1,5 @@
 {
-  "name": "@epistery/files",
+  "name": "epistery/files",
   "title": "Files",
   "version": "0.3.0",
   "description": "File management with Storj storage and data wallet origin tracking",
