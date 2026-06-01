@@ -240,22 +240,16 @@ export default class FilesAgent {
      * Get permissions using DomainACL
      */
     async getPermissions(req) {
+        // Everyone has read access by default; identity + ACL come from the
+        // host-owned req.me (same for human and MCP callers).
         const result = { admin: false, edit: false, read: true, enableRequestAccess: true };
-
-        // Everyone has read access by default
-        if (!req.episteryClient || !req.domainAcl) {
+        if (!req.me?.identityAddress || !req.domainAcl) {
             return result;
         }
-
-        try {
-            const access = await req.domainAcl.checkAgentAccess('epistery/files', req.episteryClient.address, req.hostname);
-            result.admin = access.level >= 3;
-            result.edit = access.level >= 2;  // editors and admins can upload/manage
-            result.read = access.level >= 1;  // readers and above can view
-            return result;
-        } catch (error) {
-            console.error('[Files] ACL check error:', error);
-        }
+        const access = await req.me.access('epistery/files');
+        result.admin = access.admin;
+        result.edit = access.edit;
+        result.read = access.read;
         return result;
     }
 
@@ -327,7 +321,7 @@ export default class FilesAgent {
         // Create folder
         apiRouter.post('/folder', async (req, res) => {
             try {
-                if (!req.episteryClient) {
+                if (!req.me?.identityAddress) {
                     return res.status(401).json({ error: 'Not authenticated' });
                 }
 
@@ -354,7 +348,7 @@ export default class FilesAgent {
                 const placeholderKey = `${folderPath}/.folder`;
                 const placeholderMeta = {
                     _created: new Date().toISOString(),
-                    _createdBy: req.episteryClient.address,
+                    _createdBy: req.me.identityAddress,
                     type: 'application/x-directory',
                     name: name,
                     folder: parentFolder || ''
@@ -367,7 +361,7 @@ export default class FilesAgent {
                     folder: {
                         name,
                         path: folderPath,
-                        createdBy: req.episteryClient.address
+                        createdBy: req.me.identityAddress
                     }
                 });
             } catch (error) {
@@ -379,7 +373,7 @@ export default class FilesAgent {
         // Delete folder
         apiRouter.delete('/folder', async (req, res) => {
             try {
-                if (!req.episteryClient) {
+                if (!req.me?.identityAddress) {
                     return res.status(401).json({ error: 'Not authenticated' });
                 }
 
@@ -477,7 +471,7 @@ export default class FilesAgent {
                     return res.status(400).json({ error: 'No file uploaded' });
                 }
 
-                if (!req.episteryClient) {
+                if (!req.me?.identityAddress) {
                     return res.status(401).json({ error: 'Not authenticated' });
                 }
 
@@ -506,7 +500,7 @@ export default class FilesAgent {
                         mimetype: file.mimetype,
                         folder,
                         data: fileData,
-                        address: req.episteryClient.address
+                        address: req.me.identityAddress
                     });
                     res.json(metadata);
                 } catch (error) {
@@ -596,7 +590,7 @@ export default class FilesAgent {
         // JSON file write for MCP clients. Sibling to multipart /api/upload.
         apiRouter.post('/file', express.json({ limit: '40mb' }), async (req, res) => {
             try {
-                if (!req.episteryClient) {
+                if (!req.me?.identityAddress) {
                     return res.status(401).json({ error: 'Not authenticated' });
                 }
                 const permissions = await this.getPermissions(req);
@@ -622,7 +616,7 @@ export default class FilesAgent {
                     mimetype: mt,
                     folder,
                     data,
-                    address: req.episteryClient.address
+                    address: req.me.identityAddress
                 });
                 res.json(metadata);
             } catch (error) {
@@ -755,7 +749,7 @@ export default class FilesAgent {
                 const { newName } = req.body;
                 const domain = req.hostname || 'localhost';
 
-                if (!req.episteryClient) {
+                if (!req.me?.identityAddress) {
                     return res.status(401).json({ error: 'Not authenticated' });
                 }
 
@@ -771,7 +765,7 @@ export default class FilesAgent {
 
                 // Check permissions - only file owner or admins can rename
                 const permissions = await this.getPermissions(req);
-                const isOwner = metadata.uploadedBy.toLowerCase() === req.episteryClient.address.toLowerCase();
+                const isOwner = metadata.uploadedBy.toLowerCase() === req.me.identityAddress.toLowerCase();
 
                 if (!isOwner && !permissions.admin) {
                     return res.status(403).json({ error: 'Not authorized to rename this file. Only owner or admin can rename.' });
@@ -802,7 +796,7 @@ export default class FilesAgent {
                         const walletMeta = JSON.parse(metaData.toString());
                         walletMeta.name = newName.trim();
                         walletMeta._modified = new Date().toISOString();
-                        walletMeta._modifiedBy = req.episteryClient.address;
+                        walletMeta._modifiedBy = req.me.identityAddress;
                         walletMeta._ext = ext;
                         walletMeta.originalFileKey = newFileKey;
                         await storage.writeFile(metaKey, JSON.stringify(walletMeta, null, 2));
@@ -830,7 +824,7 @@ export default class FilesAgent {
                 const { id } = req.params;
                 const domain = req.hostname || 'localhost';
 
-                if (!req.episteryClient) {
+                if (!req.me?.identityAddress) {
                     return res.status(401).json({ error: 'Not authenticated' });
                 }
 
@@ -842,7 +836,7 @@ export default class FilesAgent {
 
                 // Check permissions - only file owner or admins can delete
                 const permissions = await this.getPermissions(req);
-                const isOwner = metadata.uploadedBy.toLowerCase() === req.episteryClient.address.toLowerCase();
+                const isOwner = metadata.uploadedBy.toLowerCase() === req.me.identityAddress.toLowerCase();
 
                 if (!isOwner && !permissions.admin) {
                     return res.status(403).json({ error: 'Not authorized to delete this file. Only owner or admin can delete.' });
