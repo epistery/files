@@ -1217,9 +1217,20 @@
             window.matchMedia('(max-width: 768px)').addEventListener('change', moveToolbar);
         }, { once: true });
 
+        // Folder deep-linking: the URL hash names the folder to open, so other
+        // agents can link straight to a folder (e.g. /agent/epistery/files#Art).
+        function folderFromHash() {
+            const raw = (window.location.hash || '').replace(/^#/, '');
+            try { return decodeURIComponent(raw); } catch { return raw; }
+        }
+        window.addEventListener('hashchange', () => {
+            const folder = folderFromHash();
+            if (folder !== currentFolder) navigateToFolder(folder);
+        });
+
         // Initialize
         updateViewToggle();
-        loadFiles();
+        loadFiles(folderFromHash());
     </script>
 </body>
 </html>
