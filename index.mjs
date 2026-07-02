@@ -63,8 +63,8 @@ export default class FilesAgent {
         // Try fast warm start from cache file
         try {
             const cfg = new Config();
-            cfg.setPath(domain);
-            const data = cfg.readFile('files-cache.json');
+            await cfg.setPath(domain);
+            const data = await cfg.readFile('files-cache.json');
             const entries = JSON.parse(data.toString());
             for (const entry of entries) {
                 cache.files.set(entry.id, entry);
@@ -111,7 +111,7 @@ export default class FilesAgent {
             console.log(`[Files] Storage scan: ${scanned.size} files for ${domain}`);
 
             // Persist for next cold start
-            this._persistCache(domain, cache);
+            await this._persistCache(domain, cache);
         } catch (err) {
             console.warn('[Files] Storage scan failed, using warm cache:', err.message);
         }
@@ -150,13 +150,13 @@ export default class FilesAgent {
     /**
      * Persist cache to files-cache.json for fast cold start.
      */
-    _persistCache(domain, cache) {
+    async _persistCache(domain, cache) {
         try {
             const cfg = new Config();
-            cfg.setPath(domain);
-            cfg.save();
+            await cfg.setPath(domain);
+            await cfg.save();
             const entries = [...cache.files.values()];
-            cfg.writeFile('files-cache.json', JSON.stringify(entries, null, 2));
+            await cfg.writeFile('files-cache.json', JSON.stringify(entries, null, 2));
         } catch (e) {
             console.warn('[Files] Failed to persist cache:', e.message);
         }
@@ -833,7 +833,7 @@ export default class FilesAgent {
                     metadata.notes = String(notes);
                 }
                 cache.files.set(id, metadata);
-                this._persistCache(domain, cache);
+                await this._persistCache(domain, cache);
 
                 res.json({ success: true, file: metadata });
             } catch (error) {
@@ -882,7 +882,7 @@ export default class FilesAgent {
 
                 // Remove from cache
                 cache.files.delete(id);
-                this._persistCache(domain, cache);
+                await this._persistCache(domain, cache);
 
                 res.json({ success: true });
             } catch (error) {
