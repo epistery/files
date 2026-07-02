@@ -272,6 +272,34 @@
             color: var(--text-color);
             word-break: break-all;
         }
+        .detail-notes {
+            display: block;
+            width: 100%;
+            min-width: 0;
+            margin-top: var(--spacerquarter);
+            padding: var(--spacerquarter);
+            font: inherit;
+            font-size: 0.85rem;
+            color: var(--text-color);
+            background: var(--bg-color-quiet-d);
+            border: 1px solid var(--page-border);
+            border-radius: 6px;
+            resize: vertical;
+            overflow-wrap: anywhere;
+            box-sizing: border-box;
+        }
+        .detail-notes-save {
+            margin-top: var(--spacerquarter);
+            padding: var(--spacerquarter) var(--spacerhalf);
+            font-size: 0.8rem;
+            color: var(--text-color);
+            background: var(--action-color);
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .detail-notes-save:hover { background: var(--action-color-hilite); }
+        .detail-notes-save:disabled { opacity: 0.6; cursor: default; }
 
         .detail-preview-container {
             width: 100%;
@@ -994,6 +1022,11 @@
                     <div class="detail-label">Type</div>
                     <div class="detail-value">${esc(file.mimetype || 'unknown')}</div>
                 </div>
+                <div class="detail-item">
+                    <div class="detail-label">Notes</div>
+                    <textarea id="file-notes" class="detail-notes" rows="3" placeholder="Add a note to annotate this file...">${esc(file.notes || '')}</textarea>
+                    <button class="detail-notes-save" onclick="saveNotes('${file.id}')">Save note</button>
+                </div>
                 ${file.hash ? `<div class="detail-item">
                     <div class="detail-label">Hash</div>
                     <div class="detail-value" style="font-size: 0.75rem;">${esc(file.hash)}</div>
@@ -1057,6 +1090,33 @@
         window.downloadFile = function(id) {
             contextMenuEl.style.display = 'none';
             window.location.href = `/agent/epistery/files/api/file/${id}/download`;
+        };
+
+        window.saveNotes = async function(id) {
+            const textarea = document.getElementById('file-notes');
+            const btn = document.querySelector('.detail-notes-save');
+            if (!textarea) return;
+            const notes = textarea.value;
+            const origLabel = btn ? btn.textContent : '';
+            if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+            try {
+                const response = await fetch(`/agent/epistery/files/api/file/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notes })
+                });
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Save failed');
+                }
+                // Reflect the saved note in the in-memory list without a full reload
+                const item = currentItems.files.find(f => f.id === id);
+                if (item) item.notes = notes;
+                if (btn) { btn.textContent = 'Saved!'; setTimeout(() => { btn.textContent = origLabel; btn.disabled = false; }, 1500); }
+            } catch (error) {
+                if (btn) { btn.textContent = origLabel; btn.disabled = false; }
+                alert('Could not save note: ' + error.message);
+            }
         };
 
         window.renameFile = async function(id, currentName) {

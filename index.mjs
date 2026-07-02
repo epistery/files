@@ -142,7 +142,8 @@ export default class FilesAgent {
             folder,
             uploadedBy: record._createdBy || '',
             uploadedAt: record._created || '',
-            hash: record._hash || ''
+            hash: record._hash || '',
+            notes: record.notes || ''
         };
     }
 
@@ -187,7 +188,7 @@ export default class FilesAgent {
      * Write a file's bytes + ._i metadata, update cache, return metadata.
      * Shared by multipart /api/upload and JSON POST /api/file.
      */
-    async _persistFile(domain, { name, mimetype, folder, data, address }) {
+    async _persistFile(domain, { name, mimetype, folder, data, address, notes }) {
         const fileId = crypto.randomBytes(16).toString('hex');
         const keyBase = folder ? `${folder}/${fileId}` : fileId;
         const ext = name.split('.').pop() || 'bin';
@@ -212,7 +213,8 @@ export default class FilesAgent {
             type: mimetype,
             size: data.length,
             originalFileKey: fileKey,
-            folder: folder || ''
+            folder: folder || '',
+            notes: notes || ''
         };
         await storage.writeFile(metaKey, JSON.stringify(dataWallet, null, 2));
 
@@ -226,7 +228,8 @@ export default class FilesAgent {
             folder: folder || '',
             uploadedBy: address,
             uploadedAt: now,
-            hash
+            hash,
+            notes: notes || ''
         };
 
         const cache = await this.getCache(domain);
@@ -483,6 +486,7 @@ export default class FilesAgent {
 
                 const file = req.files.file;
                 const folder = (req.body && req.body.folder) ? req.body.folder : '';
+                const notes = (req.body && req.body.notes) ? req.body.notes : '';
                 const domain = req.hostname || 'localhost';
 
                 // Read file data
@@ -500,7 +504,8 @@ export default class FilesAgent {
                         mimetype: file.mimetype,
                         folder,
                         data: fileData,
-                        address: req.me.identityAddress
+                        address: req.me.identityAddress,
+                        notes
                     });
                     res.json(metadata);
                 } catch (error) {
@@ -598,7 +603,7 @@ export default class FilesAgent {
                     return res.status(403).json({ error: 'Not authorized to write. Editor access required.' });
                 }
 
-                const { name, folder = '', content, mimetype, encoding } = req.body || {};
+                const { name, folder = '', content, mimetype, encoding, notes = '' } = req.body || {};
                 if (!name || typeof name !== 'string') {
                     return res.status(400).json({ error: 'name is required' });
                 }
@@ -616,7 +621,8 @@ export default class FilesAgent {
                     mimetype: mt,
                     folder,
                     data,
-                    address: req.me.identityAddress
+                    address: req.me.identityAddress,
+                    notes
                 });
                 res.json(metadata);
             } catch (error) {
@@ -742,19 +748,25 @@ export default class FilesAgent {
             }
         });
 
-        // Rename file
+        // Update file metadata (rename and/or notes)
         apiRouter.patch('/file/:id', async (req, res) => {
             try {
                 const { id } = req.params;
-                const { newName } = req.body;
+                const { newName, notes } = req.body;
                 const domain = req.hostname || 'localhost';
 
                 if (!req.me?.identityAddress) {
                     return res.status(401).json({ error: 'Not authenticated' });
                 }
 
-                if (!newName || !newName.trim()) {
-                    return res.status(400).json({ error: 'newName is required' });
+                const wantRename = newName !== undefined && newName !== null;
+                const wantNotes = notes !== undefined;
+
+                if (wantRename && !newName.trim()) {
+                    return res.status(400).json({ error: 'newName cannot be empty' });
+                }
+                if (!wantRename && !wantNotes) {
+                    return res.status(400).json({ error: 'newName or notes is required' });
                 }
 
                 const cache = await this.getCache(domain);
@@ -763,19 +775,21 @@ export default class FilesAgent {
                     return res.status(404).json({ error: 'File not found' });
                 }
 
-                // Check permissions - only file owner or admins can rename
+                // Check permissions - only file owner or admins can edit
                 const permissions = await this.getPermissions(req);
                 const isOwner = metadata.uploadedBy.toLowerCase() === req.me.identityAddress.toLowerCase();
 
                 if (!isOwner && !permissions.admin) {
-                    return res.status(403).json({ error: 'Not authorized to rename this file. Only owner or admin can rename.' });
+                    return res.status(403).json({ error: 'Not authorized to edit this file. Only owner or admin can edit.' });
                 }
 
                 const rawStorage = await this.getRawStorage(domain);
                 const storage = await this.getStorage(domain);
                 const oldFileKey = metadata.fileKey || metadata.storageKey;
-                const ext = newName.split('.').pop() || metadata.name.split('.').pop() || 'bin';
-                const newFileKey = metadata.keyBase ? `${metadata.keyBase}.${ext}` : oldFileKey;
+                const ext = wantRename
+                    ? (newName.split('.').pop() || metadata.name.split('.').pop() || 'bin')
+                    : (metadata.name.split('.').pop() || 'bin');
+                const newFileKey = (wantRename && metadata.keyBase) ? `${metadata.keyBase}.${ext}` : oldFileKey;
 
                 // If the storage key changes (different extension), copy and delete
                 if (newFileKey !== oldFileKey) {
@@ -794,11 +808,16 @@ export default class FilesAgent {
                     try {
                         const metaData = await storage.readFile(metaKey);
                         const walletMeta = JSON.parse(metaData.toString());
-                        walletMeta.name = newName.trim();
+                        if (wantRename) {
+                            walletMeta.name = newName.trim();
+                            walletMeta._ext = ext;
+                            walletMeta.originalFileKey = newFileKey;
+                        }
+                        if (wantNotes) {
+                            walletMeta.notes = String(notes);
+                        }
                         walletMeta._modified = new Date().toISOString();
                         walletMeta._modifiedBy = req.me.identityAddress;
-                        walletMeta._ext = ext;
-                        walletMeta.originalFileKey = newFileKey;
                         await storage.writeFile(metaKey, JSON.stringify(walletMeta, null, 2));
                     } catch (error) {
                         console.warn('[Files] Storage meta update error:', error.message);
@@ -806,14 +825,19 @@ export default class FilesAgent {
                 }
 
                 // Update cache entry
-                metadata.name = newName.trim();
-                metadata.fileKey = newFileKey;
+                if (wantRename) {
+                    metadata.name = newName.trim();
+                    metadata.fileKey = newFileKey;
+                }
+                if (wantNotes) {
+                    metadata.notes = String(notes);
+                }
                 cache.files.set(id, metadata);
                 this._persistCache(domain, cache);
 
                 res.json({ success: true, file: metadata });
             } catch (error) {
-                console.error('[Files] Rename error:', error);
+                console.error('[Files] Update error:', error);
                 res.status(500).json({ error: error.message });
             }
         });
