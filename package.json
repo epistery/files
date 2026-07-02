@@ -1,6 +1,6 @@
 {
   "name": "@epistery/files",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "IPFS file management with data wallets for origin tracking",
   "main": "index.mjs",
