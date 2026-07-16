@@ -1,7 +1,7 @@
 {
   "name": "epistery/files",
   "title": "Files",
-  "version": "0.3.0",
+  "version": "1.1.0",
   "description": "File management with Storj storage and data wallet origin tracking",
   "author": "Epistery",
   "main": "index.mjs",
@@ -101,6 +101,21 @@
           "newName": { "type": "string", "description": "New file name" }
         },
         "required": ["id", "newName"]
+      }
+    },
+    {
+      "name": "files_move",
+      "scope": "files:write",
+      "description": "Move a file to another folder. Bytes and id are unchanged, so /file/{id} URLs survive the move. Requires owner or admin access, plus editor access in the target folder.",
+      "method": "PATCH",
+      "path": "/api/file/{id}",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "File ID (hex string)" },
+          "folder": { "type": "string", "description": "Target folder path. Empty string for root." }
+        },
+        "required": ["id", "folder"]
       }
     },
     {

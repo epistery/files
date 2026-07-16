@@ -240,12 +240,13 @@ export default class FilesAgent {
     }
 
     /**
-     * Get permissions using DomainACL
+     * Get permissions using DomainACL — the owner's verdict, nothing local.
+     * Fail-closed: anonymous callers get level 0. Public readability is a
+     * declaration — a folder assigned to the 'default' list (see folderLevel)
+     * or the domain's aclStance — never an agent-side assumption.
      */
     async getPermissions(req) {
-        // Everyone has read access by default; identity + ACL come from the
-        // host-owned req.me (same for human and MCP callers).
-        const result = { admin: false, edit: false, read: true, enableRequestAccess: true };
+        const result = { admin: false, edit: false, read: false, level: 0, enableRequestAccess: true };
         if (!req.me?.identityAddress || !req.domainAcl) {
             return result;
         }
@@ -253,7 +254,65 @@ export default class FilesAgent {
         result.admin = access.admin;
         result.edit = access.edit;
         result.read = access.read;
+        result.level = access.level || 0;
         return result;
+    }
+
+    // --- Folder access lists ---
+    //
+    // A top-level folder may carry one assignment {name, list, access}
+    // (message-board channels pattern — publicness is ACL-derived, no parallel
+    // flag). Semantics: an assigned folder belongs to its list — members get
+    // exactly `access` within the whole subtree, non-members get none, admins
+    // are exempt. The pseudo-list 'default' means everyone, anonymous
+    // included, which is how a folder is deliberately published (e.g. the
+    // adnet campaign-creatives folder). Unassigned folders inherit the
+    // agent-level verdict.
+
+    async getDomainConfig(domain) {
+        const config = new Config();
+        await config.setPath(domain);
+        if (!config.data.files) {
+            config.data.files = { folders: [] };
+            await config.save();
+        }
+        return config;
+    }
+
+    async getFolderAssignments(domain) {
+        const config = await this.getDomainConfig(domain);
+        return (config.data.files.folders || [])
+            .map(f => typeof f === 'string' ? JSON.parse(f) : f)
+            .filter(Boolean);
+    }
+
+    /**
+     * Effective access level for a folder path (top-level segment governs the
+     * subtree). Root ('' folder) is governed by the agent-level verdict.
+     */
+    async folderLevel(req, folder) {
+        const base = await this.getPermissions(req);
+        if (base.admin) return 3;
+        const top = String(folder || '').split('/')[0];
+        if (!top) return base.level;
+        // Per-request memo — a root /list checks every top-level folder and
+        // the domain config read behind assignments hits disk.
+        if (!req._folderAssignments) {
+            req._folderAssignments = await this.getFolderAssignments(req.domain);
+        }
+        const assignment = req._folderAssignments.find(f => f.name === top && f.list);
+        if (!assignment) return base.level;
+        if (assignment.list === 'default') return assignment.access;
+        if (!req.me?.identityAddress) return 0;
+        try {
+            const contract = req.domainAcl?.chain?.contract;
+            if (!contract) return 0;
+            const isIn = await contract.isInACL(assignment.list, req.me.identityAddress);
+            return isIn ? assignment.access : 0;
+        } catch (e) {
+            console.error('[Files] Folder ACL check error:', e.message);
+            return 0;
+        }
     }
 
     /**
@@ -309,7 +368,7 @@ export default class FilesAgent {
                 const storage = await this.getStorage(req.domain);
                 res.json({
                     agent: 'files',
-                    version: '0.3.0',
+                    version: '1.1.0',
                     fileCount: cache.files.size,
                     storage: storage.constructor.name
                 });
@@ -328,14 +387,16 @@ export default class FilesAgent {
                     return res.status(401).json({ error: 'Not authenticated' });
                 }
 
-                const permissions = await this.getPermissions(req);
-                if (!permissions.edit) {
-                    return res.status(403).json({ error: 'Not authorized to create folders. Editor access required.' });
-                }
-
                 const { name, parentFolder } = req.body;
                 if (!name) {
                     return res.status(400).json({ error: 'Folder name is required' });
+                }
+
+                // Editor access where the folder is being created: at root
+                // that's the agent-level verdict; inside an assigned folder,
+                // the assignment's.
+                if (await this.folderLevel(req, parentFolder || '') < 2) {
+                    return res.status(403).json({ error: 'Not authorized to create folders. Editor access required.' });
                 }
 
                 // Validate folder name
@@ -415,6 +476,55 @@ export default class FilesAgent {
             }
         });
 
+        // Folder access assignments (admin only). One {name, list, access}
+        // per top-level folder; the pseudo-list 'default' publishes the
+        // folder to everyone, anonymous included. Clearing the list reverts
+        // the folder to the agent-level verdict.
+        apiRouter.get('/folders/assignments', async (req, res) => {
+            try {
+                const permissions = await this.getPermissions(req);
+                if (!permissions.admin) {
+                    return res.status(403).json({ error: 'Admin access required' });
+                }
+                res.json({ assignments: await this.getFolderAssignments(req.domain) });
+            } catch (error) {
+                console.error('[Files] Assignments read error:', error);
+                res.status(500).json({ error: error.message });
+            }
+        });
+
+        apiRouter.put('/folders/assignments', express.json(), async (req, res) => {
+            try {
+                const permissions = await this.getPermissions(req);
+                if (!permissions.admin) {
+                    return res.status(403).json({ error: 'Admin access required' });
+                }
+                const { name, list, access } = req.body || {};
+                if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
+                    return res.status(400).json({ error: 'A valid top-level folder name is required' });
+                }
+                const level = parseInt(access, 10);
+                if (list && (!Number.isInteger(level) || level < 0 || level > 3)) {
+                    return res.status(400).json({ error: 'access must be a level 0-3' });
+                }
+
+                const config = await this.getDomainConfig(req.domain);
+                const folders = (config.data.files.folders || [])
+                    .map(f => typeof f === 'string' ? JSON.parse(f) : f)
+                    .filter(f => f && f.name !== name);
+                if (list) {
+                    folders.push({ name, list: String(list), access: level });
+                }
+                config.data.files.folders = folders;
+                await config.save();
+
+                res.json({ success: true, assignments: folders });
+            } catch (error) {
+                console.error('[Files] Assignments write error:', error);
+                res.status(500).json({ error: error.message });
+            }
+        });
+
         // List files in a folder
         apiRouter.get('/list', async (req, res) => {
             try {
@@ -422,8 +532,17 @@ export default class FilesAgent {
                 const folder = req.query.folder || '';
                 const cache = await this.getCache(domain);
 
+                // Inside a folder: its level governs. At root: files need the
+                // agent-level read; folders are filtered individually below,
+                // so a published folder stays reachable to callers with no
+                // agent-level access.
+                const level = await this.folderLevel(req, folder);
+                if (folder && level < 1) {
+                    return res.status(403).json({ error: 'Not authorized to read this folder.' });
+                }
+
                 // Filter files by folder
-                const files = [...cache.files.values()]
+                const files = level < 1 ? [] : [...cache.files.values()]
                     .filter(f => f.folder === folder);
 
                 // Get unique subfolders from cached file paths
@@ -455,7 +574,18 @@ export default class FilesAgent {
                     // Storage listing may not be supported; fall through
                 }
 
-                const folders = [...folderSet].sort().map(name => ({
+                // At root, each top-level folder answers for itself (its
+                // assignment may publish or restrict it). Inside a folder the
+                // subtree shares the top-level verdict already checked above.
+                let folderNames = [...folderSet].sort();
+                if (!folder) {
+                    const visible = [];
+                    for (const name of folderNames) {
+                        if (await this.folderLevel(req, name) >= 1) visible.push(name);
+                    }
+                    folderNames = visible;
+                }
+                const folders = folderNames.map(name => ({
                     name,
                     path: folder ? `${folder}/${name}` : name
                 }));
@@ -478,14 +608,14 @@ export default class FilesAgent {
                     return res.status(401).json({ error: 'Not authenticated' });
                 }
 
-                // Check permissions - editors (level 2) and above can upload
-                const permissions = await this.getPermissions(req);
-                if (!permissions.edit) {
-                    return res.status(403).json({ error: 'Not authorized to upload. Editor access required.' });
-                }
-
                 const file = req.files.file;
                 const folder = (req.body && req.body.folder) ? req.body.folder : '';
+
+                // Editor access (level 2) in the TARGET folder — an assigned
+                // folder answers for its own subtree.
+                if (await this.folderLevel(req, folder) < 2) {
+                    return res.status(403).json({ error: 'Not authorized to upload. Editor access required.' });
+                }
                 const notes = (req.body && req.body.notes) ? req.body.notes : '';
                 const domain = req.hostname || 'localhost';
 
@@ -532,6 +662,9 @@ export default class FilesAgent {
                 if (!metadata) {
                     return res.status(404).json({ error: 'File not found' });
                 }
+                if (await this.folderLevel(req, metadata.folder) < 1) {
+                    return res.status(403).json({ error: 'Not authorized to read this file.' });
+                }
 
                 res.json(metadata);
             } catch (error) {
@@ -551,6 +684,9 @@ export default class FilesAgent {
 
                 if (!metadata) {
                     return res.status(404).json({ error: 'File not found' });
+                }
+                if (await this.folderLevel(req, metadata.folder) < 1) {
+                    return res.status(403).json({ error: 'Not authorized to read this file.' });
                 }
                 if (metadata.size > READ_MAX_BYTES) {
                     return res.status(413).json({
@@ -598,12 +734,12 @@ export default class FilesAgent {
                 if (!req.me?.identityAddress) {
                     return res.status(401).json({ error: 'Not authenticated' });
                 }
-                const permissions = await this.getPermissions(req);
-                if (!permissions.edit) {
+                const { name, folder = '', content, mimetype, encoding, notes = '' } = req.body || {};
+
+                // Editor access (level 2) in the TARGET folder.
+                if (await this.folderLevel(req, folder) < 2) {
                     return res.status(403).json({ error: 'Not authorized to write. Editor access required.' });
                 }
-
-                const { name, folder = '', content, mimetype, encoding, notes = '' } = req.body || {};
                 if (!name || typeof name !== 'string') {
                     return res.status(400).json({ error: 'name is required' });
                 }
@@ -642,6 +778,9 @@ export default class FilesAgent {
 
                 if (!metadata) {
                     return res.status(404).end();
+                }
+                if (await this.folderLevel(req, metadata.folder) < 1) {
+                    return res.status(403).end();
                 }
 
                 const wantResize = req.query.w || req.query.h;
@@ -729,6 +868,9 @@ export default class FilesAgent {
                 if (!metadata) {
                     return res.status(404).json({ error: 'File not found' });
                 }
+                if (await this.folderLevel(req, metadata.folder) < 1) {
+                    return res.status(403).json({ error: 'Not authorized to read this file.' });
+                }
 
                 // Read through EncryptedStorage (handles encrypted + raw content)
                 const storage = await this.getStorage(domain);
@@ -752,7 +894,7 @@ export default class FilesAgent {
         apiRouter.patch('/file/:id', async (req, res) => {
             try {
                 const { id } = req.params;
-                const { newName, notes } = req.body;
+                const { newName, notes, folder } = req.body;
                 const domain = req.hostname || 'localhost';
 
                 if (!req.me?.identityAddress) {
@@ -761,12 +903,16 @@ export default class FilesAgent {
 
                 const wantRename = newName !== undefined && newName !== null;
                 const wantNotes = notes !== undefined;
+                const wantMove = folder !== undefined && folder !== null;
 
                 if (wantRename && !newName.trim()) {
                     return res.status(400).json({ error: 'newName cannot be empty' });
                 }
-                if (!wantRename && !wantNotes) {
-                    return res.status(400).json({ error: 'newName or notes is required' });
+                if (!wantRename && !wantNotes && !wantMove) {
+                    return res.status(400).json({ error: 'newName, notes or folder is required' });
+                }
+                if (wantMove && folder !== '' && !/^[a-zA-Z0-9_-]+(\/[a-zA-Z0-9_-]+)*$/.test(folder)) {
+                    return res.status(400).json({ error: 'Invalid folder path. Use only letters, numbers, hyphens, and underscores.' });
                 }
 
                 const cache = await this.getCache(domain);
@@ -782,16 +928,27 @@ export default class FilesAgent {
                 if (!isOwner && !permissions.admin) {
                     return res.status(403).json({ error: 'Not authorized to edit this file. Only owner or admin can edit.' });
                 }
+                // A move also needs editor access in the TARGET folder (bytes
+                // and id are unchanged — /file/{id} URLs survive the move).
+                if (wantMove && folder !== metadata.folder && !permissions.admin) {
+                    if (await this.folderLevel(req, folder) < 2) {
+                        return res.status(403).json({ error: 'Not authorized to move into this folder. Editor access required.' });
+                    }
+                }
 
                 const rawStorage = await this.getRawStorage(domain);
                 const storage = await this.getStorage(domain);
                 const oldFileKey = metadata.fileKey || metadata.storageKey;
+                const oldKeyBase = metadata.keyBase;
                 const ext = wantRename
                     ? (newName.split('.').pop() || metadata.name.split('.').pop() || 'bin')
                     : (metadata.name.split('.').pop() || 'bin');
-                const newFileKey = (wantRename && metadata.keyBase) ? `${metadata.keyBase}.${ext}` : oldFileKey;
+                const newKeyBase = (wantMove && oldKeyBase)
+                    ? (folder ? `${folder}/${id}` : id)
+                    : oldKeyBase;
+                const newFileKey = ((wantRename || wantMove) && newKeyBase) ? `${newKeyBase}.${ext}` : oldFileKey;
 
-                // If the storage key changes (different extension), copy and delete
+                // If the storage key changes (extension or folder), copy then delete
                 if (newFileKey !== oldFileKey) {
                     try {
                         const fileData = await rawStorage.readFile(oldFileKey);
@@ -802,23 +959,32 @@ export default class FilesAgent {
                     }
                 }
 
-                // Update ._i record in storage
-                if (metadata.keyBase) {
-                    const metaKey = `${metadata.keyBase}._i`;
+                // Update ._i record in storage (moves with the file's keyBase)
+                if (oldKeyBase) {
+                    const oldMetaKey = `${oldKeyBase}._i`;
+                    const newMetaKey = `${newKeyBase}._i`;
                     try {
-                        const metaData = await storage.readFile(metaKey);
+                        const metaData = await storage.readFile(oldMetaKey);
                         const walletMeta = JSON.parse(metaData.toString());
                         if (wantRename) {
                             walletMeta.name = newName.trim();
                             walletMeta._ext = ext;
+                        }
+                        if (wantRename || wantMove) {
                             walletMeta.originalFileKey = newFileKey;
+                        }
+                        if (wantMove) {
+                            walletMeta.folder = folder;
                         }
                         if (wantNotes) {
                             walletMeta.notes = String(notes);
                         }
                         walletMeta._modified = new Date().toISOString();
                         walletMeta._modifiedBy = req.me.identityAddress;
-                        await storage.writeFile(metaKey, JSON.stringify(walletMeta, null, 2));
+                        await storage.writeFile(newMetaKey, JSON.stringify(walletMeta, null, 2));
+                        if (newMetaKey !== oldMetaKey) {
+                            await storage.deleteFile(oldMetaKey);
+                        }
                     } catch (error) {
                         console.warn('[Files] Storage meta update error:', error.message);
                     }
@@ -827,7 +993,13 @@ export default class FilesAgent {
                 // Update cache entry
                 if (wantRename) {
                     metadata.name = newName.trim();
+                }
+                if (wantRename || wantMove) {
                     metadata.fileKey = newFileKey;
+                    metadata.keyBase = newKeyBase;
+                }
+                if (wantMove) {
+                    metadata.folder = folder;
                 }
                 if (wantNotes) {
                     metadata.notes = String(notes);
