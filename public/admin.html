@@ -82,11 +82,12 @@
             <div class="console-panel">
                 <h2>Folder Access</h2>
                 <p style="margin-bottom: var(--spacer); color: var(--text-color-quiet);">
-                    Assign a top-level folder to an access list. Members of the list get the
-                    chosen level in that folder tree; everyone else gets none (admins excepted).
-                    The list <code>default</code> means everyone — including anonymous visitors —
-                    which is how a folder is deliberately published. Unassigned folders follow
-                    the agent access control above.
+                    Assign a top-level folder to an access list. A named list is a fence:
+                    members of the list get the chosen level in that folder tree, everyone else
+                    gets none (admins excepted). The list <code>default</code> is a floor: everyone
+                    — including anonymous visitors — gets at least the chosen level, which is how
+                    a folder is deliberately published; it never reduces anyone's access.
+                    Unassigned folders follow the agent access control above.
                 </p>
                 <table class="console-table" style="width:100%">
                     <thead><tr><th style="text-align:left">Folder</th><th style="text-align:left">Access list</th><th style="text-align:left">Level</th><th></th></tr></thead>

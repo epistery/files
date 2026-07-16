@@ -262,12 +262,15 @@ export default class FilesAgent {
     //
     // A top-level folder may carry one assignment {name, list, access}
     // (message-board channels pattern — publicness is ACL-derived, no parallel
-    // flag). Semantics: an assigned folder belongs to its list — members get
-    // exactly `access` within the whole subtree, non-members get none, admins
-    // are exempt. The pseudo-list 'default' means everyone, anonymous
-    // included, which is how a folder is deliberately published (e.g. the
-    // adnet campaign-creatives folder). Unassigned folders inherit the
-    // agent-level verdict.
+    // flag). Two shapes:
+    //   - named list = a FENCE: the folder belongs to that list — members get
+    //     exactly `access` within the subtree, non-members get none, admins
+    //     are exempt.
+    //   - 'default' = a FLOOR: everyone, anonymous included, gets at least
+    //     `access` — this is how a folder is deliberately published (e.g. the
+    //     adnet campaign-creatives folder). Publication never reduces a
+    //     caller's agent-level access; editors keep editing.
+    // Unassigned folders inherit the agent-level verdict.
 
     async getDomainConfig(domain) {
         const config = new Config();
@@ -302,7 +305,7 @@ export default class FilesAgent {
         }
         const assignment = req._folderAssignments.find(f => f.name === top && f.list);
         if (!assignment) return base.level;
-        if (assignment.list === 'default') return assignment.access;
+        if (assignment.list === 'default') return Math.max(base.level, assignment.access);
         if (!req.me?.identityAddress) return 0;
         try {
             const contract = req.domainAcl?.chain?.contract;
