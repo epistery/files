@@ -80,6 +80,22 @@
             </div>
 
             <div class="console-panel">
+                <h2>Folder Access</h2>
+                <p style="margin-bottom: var(--spacer); color: var(--text-color-quiet);">
+                    Assign a top-level folder to an access list. A named list is a fence:
+                    members of the list get the chosen level in that folder tree, everyone else
+                    gets none (admins excepted). The list <code>default</code> is a floor: everyone
+                    — including anonymous visitors — gets at least the chosen level, which is how
+                    a folder is deliberately published; it never reduces anyone's access.
+                    Unassigned folders follow the agent access control above.
+                </p>
+                <table class="console-table" style="width:100%">
+                    <thead><tr><th style="text-align:left">Folder</th><th style="text-align:left">Access list</th><th style="text-align:left">Level</th><th></th></tr></thead>
+                    <tbody id="folder-assignments"></tbody>
+                </table>
+            </div>
+
+            <div class="console-panel">
                 <h2>Actions</h2>
                 <button class="console-btn" onclick="window.location.href='/agent/epistery/files'">Go to Files</button>
             </div>
@@ -108,8 +124,62 @@
             }
         }
 
+        async function loadFolderAssignments() {
+            const tbody = document.getElementById('folder-assignments');
+            try {
+                const [listResp, assignResp] = await Promise.all([
+                    fetch(API_BASE + '/api/list'),
+                    fetch(API_BASE + '/api/folders/assignments')
+                ]);
+                if (!assignResp.ok) throw new Error(`HTTP ${assignResp.status}`);
+                const { folders = [] } = listResp.ok ? await listResp.json() : {};
+                const { assignments = [] } = await assignResp.json();
+
+                // Union of visible top-level folders and any already-assigned names
+                const names = new Set(folders.map(f => f.name));
+                assignments.forEach(a => names.add(a.name));
+
+                tbody.innerHTML = '';
+                for (const name of [...names].sort()) {
+                    const a = assignments.find(x => x.name === name);
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${name}</td>
+                        <td><input type="text" placeholder="(inherit)" value="${a?.list || ''}" data-folder="${name}" class="assign-list" style="width:100%"></td>
+                        <td><select data-folder="${name}" class="assign-level">
+                            <option value="1" ${!a || a.access === 1 ? 'selected' : ''}>1 — read</option>
+                            <option value="2" ${a?.access === 2 ? 'selected' : ''}>2 — edit</option>
+                            <option value="3" ${a?.access === 3 ? 'selected' : ''}>3 — admin</option>
+                        </select></td>
+                        <td><button class="console-btn assign-save" data-folder="${name}">Save</button></td>`;
+                    tbody.appendChild(row);
+                }
+                tbody.querySelectorAll('.assign-save').forEach(btn => btn.addEventListener('click', async () => {
+                    const name = btn.dataset.folder;
+                    const list = tbody.querySelector(`.assign-list[data-folder="${name}"]`).value.trim();
+                    const access = parseInt(tbody.querySelector(`.assign-level[data-folder="${name}"]`).value, 10);
+                    const resp = await fetch(API_BASE + '/api/folders/assignments', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, list: list || null, access })
+                    });
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({}));
+                        alert('Save failed: ' + (err.error || resp.status));
+                        return;
+                    }
+                    btn.textContent = 'Saved';
+                    setTimeout(() => { btn.textContent = 'Save'; }, 1500);
+                }));
+            } catch (error) {
+                console.error('[files-admin] Assignments load error:', error);
+                tbody.innerHTML = `<tr><td colspan="4" style="color: var(--text-color-quiet)">Unavailable: ${error.message}</td></tr>`;
+            }
+        }
+
         // Load stats on page load
         loadStats();
+        loadFolderAssignments();
     </script>
 </body>
 </html>
