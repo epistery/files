@@ -93,6 +93,7 @@
                     <thead><tr><th style="text-align:left">Folder</th><th style="text-align:left">Access list</th><th style="text-align:left">Level</th><th></th></tr></thead>
                     <tbody id="folder-assignments"></tbody>
                 </table>
+                <datalist id="known-lists"><option value="default">everyone, anonymous included — publishes the folder</option></datalist>
             </div>
 
             <div class="console-panel">
@@ -143,21 +144,30 @@
                 for (const name of [...names].sort()) {
                     const a = assignments.find(x => x.name === name);
                     const row = document.createElement('tr');
+                    // An empty list means NO assignment (folder inherits the
+                    // agent stance) — the level is meaningless without a list.
                     row.innerHTML = `
                         <td>${name}</td>
-                        <td><input type="text" placeholder="(inherit)" value="${a?.list || ''}" data-folder="${name}" class="assign-list" style="width:100%"></td>
-                        <td><select data-folder="${name}" class="assign-level">
+                        <td><input type="text" list="known-lists" placeholder="none — inherits agent access" value="${a?.list || ''}" data-folder="${name}" class="assign-list" style="width:100%"></td>
+                        <td><select data-folder="${name}" class="assign-level" ${a ? '' : 'disabled'}>
                             <option value="1" ${!a || a.access === 1 ? 'selected' : ''}>1 — read</option>
                             <option value="2" ${a?.access === 2 ? 'selected' : ''}>2 — edit</option>
                             <option value="3" ${a?.access === 3 ? 'selected' : ''}>3 — admin</option>
                         </select></td>
-                        <td><button class="console-btn assign-save" data-folder="${name}">Save</button></td>`;
+                        <td><button class="console-btn assign-save" data-folder="${name}">${a ? 'Save' : 'Assign'}</button></td>`;
                     tbody.appendChild(row);
                 }
+                // Typing a list name enables the level select; clearing it disables.
+                tbody.querySelectorAll('.assign-list').forEach(input => input.addEventListener('input', () => {
+                    tbody.querySelector(`.assign-level[data-folder="${input.dataset.folder}"]`).disabled = !input.value.trim();
+                }));
                 tbody.querySelectorAll('.assign-save').forEach(btn => btn.addEventListener('click', async () => {
                     const name = btn.dataset.folder;
                     const list = tbody.querySelector(`.assign-list[data-folder="${name}"]`).value.trim();
                     const access = parseInt(tbody.querySelector(`.assign-level[data-folder="${name}"]`).value, 10);
+                    if (!list && !confirm(`No access list named for '${name}' — this clears the assignment and the folder inherits the agent access control. Continue?`)) {
+                        return;
+                    }
                     const resp = await fetch(API_BASE + '/api/folders/assignments', {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
@@ -168,8 +178,10 @@
                         alert('Save failed: ' + (err.error || resp.status));
                         return;
                     }
-                    btn.textContent = 'Saved';
-                    setTimeout(() => { btn.textContent = 'Save'; }, 1500);
+                    btn.textContent = list ? 'Saved' : 'Cleared';
+                    // Re-render from the server's answer so the panel shows what
+                    // is actually stored, not what was typed.
+                    setTimeout(loadFolderAssignments, 800);
                 }));
             } catch (error) {
                 console.error('[files-admin] Assignments load error:', error);
