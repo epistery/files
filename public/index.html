@@ -260,16 +260,39 @@
             margin-bottom: var(--spacer);
         }
 
-        .detail-item {
-            margin-bottom: var(--spacerhalf);
+        .detail-table {
+            width: 100%;
+            border-collapse: collapse;
             font-size: 0.85rem;
         }
-        .detail-label {
+        .detail-table th {
+            text-align: left;
+            vertical-align: top;
             color: var(--text-color-quiet);
             font-weight: 600;
+            padding: var(--spacerthird) var(--spacer) var(--spacerthird) 0;
+            white-space: nowrap;
+            width: 1%;
         }
-        .detail-value {
+        .detail-table td {
+            padding: var(--spacerthird) 0;
             color: var(--text-color);
+            word-break: break-all;
+        }
+        .detail-table tr + tr th,
+        .detail-table tr + tr td {
+            border-top: 1px solid var(--page-border);
+        }
+        .detail-actions {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: var(--spacer);
+            margin-top: var(--spacer);
+        }
+        .detail-link {
+            font-size: 0.75rem;
+            color: var(--action-color);
             word-break: break-all;
         }
         .detail-notes {
@@ -302,8 +325,9 @@
         .detail-notes-save:disabled { opacity: 0.6; cursor: default; }
 
         .detail-preview-container {
-            width: 100%;
-            margin-bottom: var(--spacer);
+            flex: 0 0 320px;
+            max-width: 320px;
+            max-height: 40vh;
             border-radius: 6px;
             overflow: hidden;
             background: var(--bg-color-quiet-d);
@@ -311,20 +335,25 @@
             position: relative;
         }
         .detail-preview-container img,
-        .detail-preview-container video,
+        .detail-preview-container video {
+            width: 100%;
+            max-height: 40vh;
+            object-fit: contain;
+            display: block;
+        }
         .detail-preview-container audio {
             width: 100%;
             display: block;
         }
         .detail-preview-container iframe {
             width: 100%;
-            height: 300px;
+            height: 40vh;
             border: none;
         }
         .detail-preview-container pre {
             padding: var(--spacer);
             font-size: 0.8rem;
-            max-height: 300px;
+            max-height: 40vh;
             overflow: auto;
             margin: 0;
             white-space: pre-wrap;
@@ -351,7 +380,6 @@
             display: flex;
             flex-direction: row;
             gap: var(--spacerthird);
-            margin-top: var(--spacer);
         }
         .detail-btn {
             width: 32px;
@@ -483,6 +511,71 @@
         }
         .mobile-view-row .toolbar-btn { flex: 1; justify-content: center; }
 
+        /* Details bottom panel — slides up when a file/folder is selected */
+        #details-panel {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            min-height: 33vh;
+            max-height: 50vh;
+            padding: var(--spacer);
+            background: var(--bg-color);
+            border-top: 1px solid var(--page-border);
+            box-shadow: 0 -4px 16px rgba(0,0,0,0.2);
+            overflow-y: auto;
+            z-index: 500;
+            transform: translateY(110%);
+            transition: transform 0.25s ease;
+        }
+        #details-panel.open {
+            transform: translateY(0);
+        }
+        .details-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: var(--spacer);
+        }
+        .details-header h3 {
+            font-size: 0.9rem;
+            color: var(--text-color-quiet);
+            margin: 0;
+        }
+        .details-close-btn {
+            margin-left: auto;
+            background: none;
+            border: none;
+            color: var(--text-color-quiet);
+            font-size: 1.4rem;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0 4px;
+        }
+        .details-close-btn:hover {
+            color: var(--text-color);
+        }
+        #file-details {
+            display: flex;
+            gap: var(--spacer2);
+            align-items: flex-start;
+        }
+        #file-details .detail-fields {
+            flex: 1;
+            min-width: 0;
+        }
+        /* Keep the last rows scrollable above the open panel */
+        body.details-open #file-container {
+            padding-bottom: 40vh;
+        }
+
+        /* Folder tree and access widget when relocated to the harness menu */
+        #header-sidebar-content .sidebar-section,
+        #header-sidebar-content .request-access-widget {
+            padding: var(--spacer);
+            margin-bottom: 0;
+            border-bottom: 1px solid var(--page-border);
+        }
+
         /* Mobile layout */
         @media (max-width: 768px) {
             .files-toolbar {
@@ -494,17 +587,40 @@
                 height: calc(100vh - 40px);
             }
             .console-main {
-                flex: 1 1 50%;
+                flex: 1;
                 min-height: 0;
                 overflow-y: auto;
                 padding: 0 !important;
             }
+            /* Sidebar content lives in the harness slide-in menu on mobile */
             .console-sidebar {
-                flex: 1 1 50%;
+                display: none;
+            }
+            #details-panel {
+                height: 50vh;
+                height: 50dvh;
                 min-height: 0;
-                overflow-y: auto;
-                border-left: none !important;
-                border-top: 1px solid var(--page-border);
+                max-height: none;
+            }
+            #file-details {
+                flex-direction: column;
+            }
+            .detail-preview-container {
+                flex: none;
+                width: 100%;
+                max-width: none;
+                max-height: 25vh;
+            }
+            .detail-preview-container img,
+            .detail-preview-container video,
+            .detail-preview-container pre {
+                max-height: 25vh;
+            }
+            .detail-preview-container iframe {
+                height: 25vh;
+            }
+            body.details-open #file-container {
+                padding-bottom: 55vh;
             }
             .file-grid {
                 min-height: unset;
@@ -565,13 +681,16 @@
                 <h3>File Explorer</h3>
                 <div id="folder-tree"></div>
             </div>
-
-            <div class="sidebar-section" id="details-section" style="display: none;">
-                <h3>Details</h3>
-                <div id="file-details"></div>
-            </div>
         </aside>
     </main>
+
+    <div id="details-panel">
+        <div class="details-header">
+            <h3>Details</h3>
+            <button class="details-close-btn" title="Close" onclick="closeDetails()">&times;</button>
+        </div>
+        <div id="file-details"></div>
+    </div>
 
     <input type="file" id="file-input" accept="*/*" multiple>
     <div class="context-menu" id="context-menu" style="display:none;"></div>
@@ -599,7 +718,8 @@
         const fileInput = document.getElementById('file-input');
         const fileContainer = document.getElementById('file-container');
         const dropZone = document.getElementById('drop-zone');
-        const detailsSection = document.getElementById('details-section');
+        const detailsPanel = document.getElementById('details-panel');
+        const sidebarEl = document.querySelector('.console-sidebar');
         const fileDetails = document.getElementById('file-details');
         const domainCrumb = document.getElementById('domain-crumb');
         const folderTree = document.getElementById('folder-tree');
@@ -758,8 +878,7 @@
         async function loadFiles(folder) {
             if (folder === undefined) folder = '';
             currentFolder = folder;
-            selectedItem = null;
-            detailsSection.style.display = 'none';
+            closeDetails();
             updateBreadcrumb(folder);
 
             try {
@@ -967,29 +1086,44 @@
 
         // --- Details pane ---
 
+        function openDetails() {
+            detailsPanel.classList.add('open');
+            document.body.classList.add('details-open');
+        }
+
+        window.closeDetails = function() {
+            detailsPanel.classList.remove('open');
+            document.body.classList.remove('details-open');
+            selectedItem = null;
+            document.querySelectorAll('.file-tile.selected, .file-list-row.selected')
+                .forEach(t => t.classList.remove('selected'));
+        };
+
+        // Tapping empty space deselects and dismisses the details sheet
+        fileContainer.addEventListener('click', (e) => {
+            if (!e.target.closest('.file-tile, .file-list-row, .show-more-btn')) closeDetails();
+        });
+
         function showFolderDetails() {
             if (!selectedItem) return;
-            detailsSection.style.display = 'block';
+            openDetails();
             fileDetails.innerHTML = `
-                <div class="detail-item">
-                    <div class="detail-label">Type</div>
-                    <div class="detail-value">Folder</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Name</div>
-                    <div class="detail-value">${esc(selectedItem.name)}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Path</div>
-                    <div class="detail-value">${esc(selectedItem.path)}</div>
-                </div>
-                <div class="detail-buttons">
-                    <button class="detail-btn danger" title="Delete Folder" onclick="deleteFolder('${esc(selectedItem.path)}')"><span class="icon icon-trash"></span></button>
+                <div class="detail-fields">
+                    <table class="detail-table">
+                        <tr><th>Type</th><td>Folder</td></tr>
+                        <tr><th>Name</th><td>${esc(selectedItem.name)}</td></tr>
+                        <tr><th>Path</th><td>${esc(selectedItem.path)}</td></tr>
+                    </table>
+                    <div class="detail-actions">
+                        <div class="detail-buttons">
+                            <button class="detail-btn danger" title="Delete Folder" onclick="deleteFolder('${esc(selectedItem.path)}')"><span class="icon icon-trash"></span></button>
+                        </div>
+                    </div>
                 </div>`;
         }
 
         function showFileDetails(file) {
-            detailsSection.style.display = 'block';
+            openDetails();
 
             let previewHtml = '';
             const mime = file.mimetype || '';
@@ -1010,47 +1144,29 @@
 
             fileDetails.innerHTML = `
                 ${previewHtml}
-                <div class="detail-item">
-                    <div class="detail-label">Name</div>
-                    <div class="detail-value">${esc(file.name)}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Size</div>
-                    <div class="detail-value">${formatSize(file.size)}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Type</div>
-                    <div class="detail-value">${esc(file.mimetype || 'unknown')}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Notes</div>
-                    <textarea id="file-notes" class="detail-notes" rows="3" placeholder="Add a note to annotate this file...">${esc(file.notes || '')}</textarea>
-                    <button class="detail-notes-save" onclick="saveNotes('${file.id}')">Save note</button>
-                </div>
-                ${file.hash ? `<div class="detail-item">
-                    <div class="detail-label">Hash</div>
-                    <div class="detail-value" style="font-size: 0.75rem;">${esc(file.hash)}</div>
-                </div>` : ''}
-                ${file.uploadedBy ? `<div class="detail-item">
-                    <div class="detail-label">Uploaded By</div>
-                    <div class="detail-value" style="font-size: 0.75rem;">${esc(file.uploadedBy)}</div>
-                </div>` : ''}
-                ${file.uploadedAt ? `<div class="detail-item">
-                    <div class="detail-label">Uploaded</div>
-                    <div class="detail-value">${new Date(file.uploadedAt).toLocaleString()}</div>
-                </div>` : ''}
-                <div class="detail-item">
-                    <div class="detail-label">Direct Link</div>
-                    <div class="detail-value" style="font-size: 0.75rem;">
-                        <a href="${previewUrl}" target="_blank" style="color: var(--action-color); word-break: break-all;">${esc(location.origin + previewUrl)}</a>
+                <div class="detail-fields">
+                    <table class="detail-table">
+                        <tr><th>Name</th><td>${esc(file.name)}</td></tr>
+                        <tr><th>Size</th><td>${formatSize(file.size)}</td></tr>
+                        <tr><th>Type</th><td>${esc(file.mimetype || 'unknown')}</td></tr>
+                        <tr><th>Notes</th><td>
+                            <textarea id="file-notes" class="detail-notes" rows="3" placeholder="Add a note to annotate this file...">${esc(file.notes || '')}</textarea>
+                            <button class="detail-notes-save" onclick="saveNotes('${file.id}')">Save note</button>
+                        </td></tr>
+                        ${file.hash ? `<tr><th>Hash</th><td style="font-size: 0.75rem;">${esc(file.hash)}</td></tr>` : ''}
+                        ${file.uploadedBy ? `<tr><th>Uploaded By</th><td style="font-size: 0.75rem;">${esc(file.uploadedBy)}</td></tr>` : ''}
+                        ${file.uploadedAt ? `<tr><th>Uploaded</th><td>${new Date(file.uploadedAt).toLocaleString()}</td></tr>` : ''}
+                    </table>
+                    <div class="detail-actions">
+                        <div class="detail-buttons">
+                            <button class="detail-btn" title="Open" onclick="openFileLink('${file.id}')"><span class="icon icon-globe"></span></button>
+                            <button class="detail-btn" title="Copy Link" onclick="copyFileLink('${file.id}')"><span class="icon icon-link"></span></button>
+                            <button class="detail-btn" title="Download" onclick="downloadFile('${file.id}')"><span class="icon icon-download"></span></button>
+                            <button class="detail-btn" title="Rename" onclick="renameFile('${file.id}', '${esc(file.name)}')"><span class="icon icon-pencil"></span></button>
+                            <button class="detail-btn danger" title="Delete" onclick="deleteFile('${file.id}')"><span class="icon icon-trash"></span></button>
+                        </div>
+                        <a class="detail-link" href="${previewUrl}" target="_blank">${esc(location.origin + previewUrl)}</a>
                     </div>
-                </div>
-                <div class="detail-buttons">
-                    <button class="detail-btn" title="Open" onclick="openFileLink('${file.id}')"><span class="icon icon-globe"></span></button>
-                    <button class="detail-btn" title="Copy Link" onclick="copyFileLink('${file.id}')"><span class="icon icon-link"></span></button>
-                    <button class="detail-btn" title="Download" onclick="downloadFile('${file.id}')"><span class="icon icon-download"></span></button>
-                    <button class="detail-btn" title="Rename" onclick="renameFile('${file.id}', '${esc(file.name)}')"><span class="icon icon-pencil"></span></button>
-                    <button class="detail-btn danger" title="Delete" onclick="deleteFile('${file.id}')"><span class="icon icon-trash"></span></button>
                 </div>`;
         }
 
@@ -1260,15 +1376,23 @@
             const mobileSlot = document.getElementById('header-sidebar-content');
             if (!mobileTools || !mobileSlot) return;
 
+            const explorerSection = document.getElementById('explorer-section');
+            const accessWidget = document.querySelector('.request-access-widget');
             const isMobile = window.matchMedia('(max-width: 768px)').matches;
             const isInSlot = mobileSlot.contains(mobileTools);
 
             if (isMobile && !isInSlot) {
                 mobileTools.style.display = 'block';
                 mobileSlot.appendChild(mobileTools);
+                // On mobile the folder tree and access widget live in the
+                // harness slide-in menu
+                mobileSlot.appendChild(explorerSection);
+                if (accessWidget) mobileSlot.appendChild(accessWidget);
             } else if (!isMobile && isInSlot) {
                 mobileTools.style.display = 'none';
                 document.body.appendChild(mobileTools);
+                sidebarEl.appendChild(explorerSection);
+                if (accessWidget) sidebarEl.insertBefore(accessWidget, explorerSection);
             }
         }
 
